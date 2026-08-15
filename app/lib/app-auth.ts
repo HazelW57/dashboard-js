@@ -8,21 +8,34 @@ const SESSION_DURATION_SECONDS = 12 * 60 * 60;
 type AuthBindings = {
   APP_LOGIN_USERNAME?: string;
   APP_LOGIN_PASSWORD?: string;
+  APP_EDITOR_USERNAME?: string;
+  APP_EDITOR_PASSWORD?: string;
   SESSION_SECRET?: string;
 };
+
+export type AppRole = "viewer" | "editor";
 
 export type AppSessionUser = {
   username: string;
   displayName: string;
+  role: AppRole;
 };
+
+export type AppAuthAccount = AppSessionUser & { password: string };
 
 export function getAuthConfig() {
   const bindings = env as unknown as AuthBindings;
   const username = bindings.APP_LOGIN_USERNAME || process.env.APP_LOGIN_USERNAME;
   const password = bindings.APP_LOGIN_PASSWORD || process.env.APP_LOGIN_PASSWORD;
+  const editorUsername = bindings.APP_EDITOR_USERNAME || process.env.APP_EDITOR_USERNAME;
+  const editorPassword = bindings.APP_EDITOR_PASSWORD || process.env.APP_EDITOR_PASSWORD;
   const secret = bindings.SESSION_SECRET || process.env.SESSION_SECRET;
-  if (!username || !password || !secret) return null;
-  return { username, password, secret };
+  if (!username || !password || !editorUsername || !editorPassword || !secret) return null;
+  const accounts: AppAuthAccount[] = [
+    { username, password, displayName: username.toUpperCase(), role: "viewer" },
+    { username: editorUsername, password: editorPassword, displayName: editorUsername, role: "editor" },
+  ];
+  return { accounts, secret };
 }
 
 async function hmac(value: string, secret: string) {
@@ -47,21 +60,21 @@ export function safeEqual(left: string, right: string) {
   return result === 0;
 }
 
-export async function createSessionToken(username: string, secret: string) {
+export async function createSessionToken(role: AppRole, secret: string) {
   const expires = Math.floor(Date.now() / 1000) + SESSION_DURATION_SECONDS;
-  const payload = `${username}.${expires}`;
+  const payload = `${role}.${expires}`;
   return `${payload}.${await hmac(payload, secret)}`;
 }
 
-export async function verifySessionToken(token: string, secret: string): Promise<AppSessionUser | null> {
+export async function verifySessionToken(token: string, secret: string): Promise<{ role: AppRole } | null> {
   const parts = token.split(".");
   if (parts.length !== 3) return null;
-  const [username, expiresText, signature] = parts;
+  const [role, expiresText, signature] = parts;
   const expires = Number(expiresText);
-  if (!username || !Number.isFinite(expires) || expires <= Math.floor(Date.now() / 1000)) return null;
-  const expected = await hmac(`${username}.${expiresText}`, secret);
+  if ((role !== "viewer" && role !== "editor") || !Number.isFinite(expires) || expires <= Math.floor(Date.now() / 1000)) return null;
+  const expected = await hmac(`${role}.${expiresText}`, secret);
   if (!safeEqual(signature, expected)) return null;
-  return { username, displayName: username.toUpperCase() };
+  return { role };
 }
 
 export async function getAppSession() {
@@ -71,8 +84,10 @@ export async function getAppSession() {
   const token = cookieStore.get(SESSION_COOKIE)?.value;
   if (!token) return null;
   const session = await verifySessionToken(token, config.secret);
-  if (!session || !safeEqual(session.username, config.username)) return null;
-  return session;
+  if (!session) return null;
+  const account = config.accounts.find((candidate) => candidate.role === session.role);
+  if (!account) return null;
+  return { username: account.username, displayName: account.displayName, role: account.role };
 }
 
 export async function requireAppSession(returnTo: string) {

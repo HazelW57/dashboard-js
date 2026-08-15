@@ -7,7 +7,7 @@ export default async function Home() {
   const user = await requireAppSession("/");
   return (
     <DashboardApp
-      user={{ name: user.displayName, email: user.username }}
+      user={{ name: user.displayName, username: user.username, role: user.role }}
       signOutHref="/api/auth/logout"
     />
   );

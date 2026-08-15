@@ -28,9 +28,15 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Too many attempts. Try again in 15 minutes." }, { status: 429 });
   }
 
-  const usernameMatches = safeEqual(body.username?.trim() ?? "", config.username);
-  const passwordMatches = safeEqual(body.password ?? "", config.password);
-  if (!usernameMatches || !passwordMatches) {
+  const submittedUsername = body.username?.trim().toLowerCase() ?? "";
+  const submittedPassword = body.password ?? "";
+  let matchedAccount = null as typeof config.accounts[number] | null;
+  for (const account of config.accounts) {
+    const usernameMatches = safeEqual(submittedUsername, account.username.trim().toLowerCase());
+    const passwordMatches = safeEqual(submittedPassword, account.password);
+    if (usernameMatches && passwordMatches) matchedAccount = account;
+  }
+  if (!matchedAccount) {
     const attempts = (attempt?.attempts ?? 0) + 1;
     const lockedUntil = attempts >= 5 ? now + 15 * 60 * 1000 : 0;
     await DB.prepare(`INSERT INTO login_attempts (identifier, attempts, locked_until, updated_at)
@@ -46,7 +52,7 @@ export async function POST(request: Request) {
 
   await DB.prepare("DELETE FROM login_attempts WHERE identifier = ?").bind(identifier).run();
   const response = NextResponse.json({ ok: true });
-  response.cookies.set(SESSION_COOKIE, await createSessionToken(config.username, config.secret), {
+  response.cookies.set(SESSION_COOKIE, await createSessionToken(matchedAccount.role, config.secret), {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",

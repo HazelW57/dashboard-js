@@ -7,6 +7,9 @@ export async function PATCH(request: Request) {
   if (!user) {
     return NextResponse.json({ error: "Authentication required" }, { status: 401 });
   }
+  if (user.role !== "editor") {
+    return NextResponse.json({ error: "This account has view-only access" }, { status: 403 });
+  }
 
   const body = await request.json() as {
     dashboardType?: "DTC" | "B2B";

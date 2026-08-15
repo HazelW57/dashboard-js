@@ -25,6 +25,10 @@ function unauthorized() {
   return NextResponse.json({ error: "Authentication required" }, { status: 401 });
 }
 
+function readOnly() {
+  return NextResponse.json({ error: "This account has view-only access" }, { status: 403 });
+}
+
 export async function GET() {
   const user = await getApiUser();
   if (!user) return unauthorized();
@@ -60,6 +64,7 @@ export async function GET() {
 export async function POST(request: Request) {
   const user = await getApiUser();
   if (!user) return unauthorized();
+  if (user.role !== "editor") return readOnly();
   const { DB, UPLOADS } = getBindings();
   await initializeStorage(DB);
 

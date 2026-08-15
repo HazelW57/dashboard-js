@@ -41,6 +41,7 @@ import {
   type ReasonEdit,
 } from "../lib/dashboard-types";
 import { sampleDashboard } from "../lib/sample-dashboard";
+import type { AppRole } from "../lib/app-auth";
 
 type View = "DTC" | "B2B" | "LATE";
 type LateSheet = "DTC" | "B2B";
@@ -75,18 +76,19 @@ function MetricCard({ label, value, tone, detail }: { label: string; value: stri
   );
 }
 
-function EmptyLateOrders({ onUpload }: { onUpload: () => void }) {
+function EmptyLateOrders({ canUpload, onUpload }: { canUpload: boolean; onUpload: () => void }) {
   return (
     <div className="empty-state">
       <div className="empty-icon"><FileSpreadsheet size={24} /></div>
       <h3>Upload a live workbook to review orders</h3>
-      <p>The sample view excludes order-level details. Your uploaded workbook stays behind the private login.</p>
-      <button className="btn-primary" onClick={onUpload}><Upload size={16} /> Upload Excel</button>
+      <p>{canUpload ? "The sample view excludes order-level details. Your uploaded workbook stays behind the private login." : "No order-level details are available in the current workbook."}</p>
+      {canUpload && <button className="btn-primary" onClick={onUpload}><Upload size={16} /> Upload Excel</button>}
     </div>
   );
 }
 
-export function DashboardApp({ user, signOutHref }: { user: { name: string; email: string }; signOutHref: string }) {
+export function DashboardApp({ user, signOutHref }: { user: { name: string; username: string; role: AppRole }; signOutHref: string }) {
+  const canEdit = user.role === "editor";
   const [view, setView] = useState<View>("DTC");
   const [lateSheet, setLateSheet] = useState<LateSheet>("DTC");
   const [dashboard, setDashboard] = useState<DashboardData>(sampleDashboard);
@@ -135,7 +137,7 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; emai
   })).sort((a, b) => b.value - a.value), [summaryOrders]);
 
   async function uploadWorkbook(file?: File) {
-    if (!file) return;
+    if (!file || !canEdit) return;
     setUploading(true);
     setUploadError("");
     setUploadSuccess(false);
@@ -159,6 +161,7 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; emai
   }
 
   function patchReason(order: LateOrder, field: "reason" | "remarks", value: string) {
+    if (!canEdit) return;
     const key = orderKey(order.dashboardType, order.orderNumber);
     setReasonEdits((current) => ({
       ...current,
@@ -174,6 +177,7 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; emai
   }
 
   async function saveReason(order: LateOrder) {
+    if (!canEdit) return;
     const key = orderKey(order.dashboardType, order.orderNumber);
     const edit = reasonEdits[key] ?? {
       orderKey: key,
@@ -208,14 +212,13 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; emai
         <div className="brand-lockup">
           <img src="/js-logo-white.svg" alt="Jiant Solutions" />
         </div>
-        <div className="internal-badge"><ShieldCheck size={14} /> Internal workspace</div>
+        <div className="internal-badge"><ShieldCheck size={14} /> {canEdit ? "Editor access" : "View-only access"}</div>
         <nav aria-label="Dashboard navigation">
           <button className={view === "DTC" ? "active" : ""} onClick={() => setView("DTC")}><LayoutDashboard size={18} /><span>DTC Dashboard</span><ChevronRight size={15} /></button>
           <button className={view === "B2B" ? "active" : ""} onClick={() => setView("B2B")}><Users size={18} /><span>B2B Dashboard</span><ChevronRight size={15} /></button>
           <button className={view === "LATE" ? "active" : ""} onClick={() => setView("LATE")}><AlertTriangle size={18} /><span>Late Order Review</span><ChevronRight size={15} /></button>
         </nav>
-        <div className="sidebar-section-label">Data management</div>
-        <button className="sidebar-upload" onClick={() => setUploadOpen(true)}><Upload size={18} /><span>Upload Excel</span></button>
+        {canEdit && <><div className="sidebar-section-label">Data management</div><button className="sidebar-upload" onClick={() => setUploadOpen(true)}><Upload size={18} /><span>Upload Excel</span></button></>}
         <div className="data-source-card">
           <span className={liveData ? "status-live" : "status-sample"}>{liveData ? "Live dataset" : "Sample preview"}</span>
           <strong>{dashboard.meta.reportLabel}</strong>
@@ -223,7 +226,7 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; emai
         </div>
         <div className="sidebar-footer">
           <div className="avatar">{user.name.slice(0, 1).toUpperCase()}</div>
-          <div><strong>{user.name}</strong><span>{user.email}</span></div>
+          <div><strong>{user.name}</strong><span>{canEdit ? "Editor" : "View only"}</span></div>
           <a href={signOutHref} aria-label="Sign out"><LogOut size={17} /></a>
         </div>
       </aside>
@@ -236,7 +239,7 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; emai
           </div>
           <div className="topbar-actions">
             <div className="report-chip"><span>REPORT PERIOD</span><strong>{dashboard.meta.reportLabel}</strong></div>
-            <button className="btn-primary" onClick={() => setUploadOpen(true)}><Upload size={16} /> Update data</button>
+            {canEdit ? <button className="btn-primary" onClick={() => setUploadOpen(true)}><Upload size={16} /> Update data</button> : <span className="read-only-pill"><ShieldCheck size={14} /> View only</span>}
           </div>
         </header>
 
@@ -331,19 +334,19 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; emai
                 </div>
               </article>
               <article className="panel chart-panel reason-panel">
-                <div className="panel-title"><div><span>{view} root causes</span><h3>Latest late-reason summary</h3></div></div>
-                {summaryOrders.length ? <ResponsiveContainer width="100%" height={300}><BarChart data={reasonSummary.slice(0, 6)} layout="vertical" margin={{ left: 18, right: 20 }}><CartesianGrid horizontal={false} stroke="#edf0f2" /><XAxis type="number" hide /><YAxis dataKey="label" type="category" width={125} tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "#5f6d76" }} /><Tooltip content={<ChartTooltip />} cursor={{ fill: "#f7f2ef" }} /><Bar dataKey="value" name="Late Orders" fill="#bd4c3f" radius={[0, 5, 5, 0]} /></BarChart></ResponsiveContainer> : <EmptyLateOrders onUpload={() => setUploadOpen(true)} />}
+                <div className="panel-title"><div><span>{view} root causes</span><h3>Late Reasons - 4 Weeks</h3></div></div>
+                {summaryOrders.length ? <ResponsiveContainer width="100%" height={300}><BarChart data={reasonSummary.slice(0, 6)} layout="vertical" margin={{ left: 18, right: 20 }}><CartesianGrid horizontal={false} stroke="#edf0f2" /><XAxis type="number" hide /><YAxis dataKey="label" type="category" width={125} tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "#5f6d76" }} /><Tooltip content={<ChartTooltip />} cursor={{ fill: "#f7f2ef" }} /><Bar dataKey="value" name="Late Orders" fill="#bd4c3f" radius={[0, 5, 5, 0]} /></BarChart></ResponsiveContainer> : <EmptyLateOrders canUpload={canEdit} onUpload={() => setUploadOpen(true)} />}
               </article>
             </section>
 
             <section className="panel late-preview-panel">
               <div className="panel-title"><div><span>Action queue</span><h3>{view} late orders</h3></div><button className="btn-text" onClick={() => setView("LATE")}>Open full review <ChevronRight size={15} /></button></div>
-              {visibleLateOrders.length ? <LateOrderTable sheetType={view as LateSheet} orders={visibleLateOrders.slice(0, 5)} edits={reasonEdits} savingKey={savingKey} savedKey={savedKey} onPatch={patchReason} onSave={saveReason} compact /> : <EmptyLateOrders onUpload={() => setUploadOpen(true)} />}
+              {visibleLateOrders.length ? <LateOrderTable canEdit={canEdit} sheetType={view as LateSheet} orders={visibleLateOrders.slice(0, 5)} edits={reasonEdits} savingKey={savingKey} savedKey={savedKey} onPatch={patchReason} onSave={saveReason} compact /> : <EmptyLateOrders canUpload={canEdit} onUpload={() => setUploadOpen(true)} />}
             </section>
           </div>
         ) : (
           <div className="dashboard-content review-content">
-            <section className="review-hero"><div><span>Collaborative workflow</span><h2>Complete every late-order reason</h2><p>Work in the two Excel-style sheets below. Saved reasons flow directly into the matching dashboard summary.</p></div><div className="review-stats"><div><strong>{activeLateSheetOrders.length}</strong><span>{lateSheet} late</span></div><div><strong>{activeLateSheetOrders.filter((order) => order.reason).length}</strong><span>Classified</span></div><div><strong>{activeLateSheetOrders.filter((order) => !order.reason).length}</strong><span>Open</span></div></div></section>
+            <section className="review-hero"><div><span>{canEdit ? "Collaborative workflow" : "Read-only register"}</span><h2>{canEdit ? "Complete every late-order reason" : "Review every late-order reason"}</h2><p>{canEdit ? "Work in the two Excel-style sheets below. Saved reasons flow directly into the matching dashboard summary." : "This account can review saved reasons and remarks but cannot change them."}</p></div><div className="review-stats"><div><strong>{activeLateSheetOrders.length}</strong><span>{lateSheet} late</span></div><div><strong>{activeLateSheetOrders.filter((order) => order.reason).length}</strong><span>Classified</span></div><div><strong>{activeLateSheetOrders.filter((order) => !order.reason).length}</strong><span>Open</span></div></div></section>
             <section className="panel review-table-panel">
               <div className="review-table-heading">
                 <div className="panel-title"><div><span>Editable workbook</span><h3>Late order reason register</h3></div></div>
@@ -352,16 +355,16 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; emai
                   <button type="button" role="tab" aria-selected={lateSheet === "B2B"} className={lateSheet === "B2B" ? "active" : ""} onClick={() => setLateSheet("B2B")}>B2B Late Orders <span>{b2bSheetOrders.length}</span></button>
                 </div>
               </div>
-              <p className="sheet-help">Fill in Late Reason and Remarks, then save the row. The {lateSheet} Dashboard latest summary updates immediately.</p>
+              <p className="sheet-help">{canEdit ? `Fill in Late Reason and Remarks, then save the row. The ${lateSheet} Dashboard latest summary updates immediately.` : "View-only account: Late Reason and Remarks cannot be changed."}</p>
               <div role="tabpanel" aria-label={`${lateSheet} Late Orders`}>
-                {activeLateSheetOrders.length ? <LateOrderTable sheetType={lateSheet} orders={activeLateSheetOrders} edits={reasonEdits} savingKey={savingKey} savedKey={savedKey} onPatch={patchReason} onSave={saveReason} /> : <EmptyLateOrders onUpload={() => setUploadOpen(true)} />}
+                {activeLateSheetOrders.length ? <LateOrderTable canEdit={canEdit} sheetType={lateSheet} orders={activeLateSheetOrders} edits={reasonEdits} savingKey={savingKey} savedKey={savedKey} onPatch={patchReason} onSave={saveReason} /> : <EmptyLateOrders canUpload={canEdit} onUpload={() => setUploadOpen(true)} />}
               </div>
             </section>
           </div>
         )}
       </main>
 
-      {uploadOpen && (
+      {canEdit && uploadOpen && (
         <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Upload dashboard workbook">
           <div className="upload-modal">
             <button className="modal-close" onClick={() => setUploadOpen(false)} aria-label="Close"><X size={20} /></button>
@@ -382,15 +385,15 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; emai
   );
 }
 
-function LateOrderTable({ sheetType, orders, edits, savingKey, savedKey, onPatch, onSave, compact = false }: { sheetType: LateSheet; orders: LateOrder[]; edits: Record<string, ReasonEdit>; savingKey: string; savedKey: string; onPatch: (order: LateOrder, field: "reason" | "remarks", value: string) => void; onSave: (order: LateOrder) => void; compact?: boolean }) {
+function LateOrderTable({ canEdit, sheetType, orders, edits, savingKey, savedKey, onPatch, onSave, compact = false }: { canEdit: boolean; sheetType: LateSheet; orders: LateOrder[]; edits: Record<string, ReasonEdit>; savingKey: string; savedKey: string; onPatch: (order: LateOrder, field: "reason" | "remarks", value: string) => void; onSave: (order: LateOrder) => void; compact?: boolean }) {
   return (
-    <div className="table-scroll late-table-wrap"><table className={`late-table late-table-${sheetType.toLowerCase()}`}><thead><tr><th>{sheetType === "DTC" ? "Store Name" : "Account"}</th><th>Order Number</th><th>Order Date</th><th>Shipped Date</th><th>{sheetType === "DTC" ? "Processing Days" : "Calendar Days"}</th>{sheetType === "DTC" ? <th>Shipping Time Group</th> : <><th>SLA Days</th><th>Days Over SLA</th></>}<th>Late Reason</th><th>Remarks</th><th /></tr></thead><tbody>{orders.map((order) => {
+    <div className="table-scroll late-table-wrap"><table className={`late-table late-table-${sheetType.toLowerCase()}`}><thead><tr><th>{sheetType === "DTC" ? "Store Name" : "Account"}</th><th>Order Number</th><th>Order Date</th><th>Shipped Date</th><th>{sheetType === "DTC" ? "Processing Days" : "Calendar Days"}</th>{sheetType === "DTC" ? <th>Shipping Time Group</th> : <><th>SLA Days</th><th>Days Over SLA</th></>}<th>Late Reason</th><th>Remarks</th>{canEdit && <th />}</tr></thead><tbody>{orders.map((order) => {
       const key = orderKey(order.dashboardType, order.orderNumber);
       const edit = edits[key];
       const reason = edit?.reason ?? order.reason;
       const remarks = edit?.remarks ?? order.remarks;
       const slaDays = sheetType === "B2B" ? confirmedB2bSlaDays(order.name, order.slaDays) : null;
-      return <tr key={key}><td className="entity-cell"><strong>{order.name}</strong></td><td><code>{order.orderNumber}</code></td><td>{formatDate(order.orderDate)}</td><td>{formatDate(order.shippedDate)}</td><td><span className="delay-badge">{order.businessDays} days</span></td>{sheetType === "DTC" ? <td>{order.group}</td> : <><td>{slaDays == null ? "—" : `${slaDays} days`}</td><td>{order.group}</td></>}<td><select aria-label={`Late reason for ${order.orderNumber}`} value={reason} onChange={(event) => onPatch(order, "reason", event.target.value)}><option value="">Select reason</option>{LATE_REASON_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></td><td><input aria-label={`Remarks for ${order.orderNumber}`} value={remarks} placeholder={compact ? "Add note" : "Add context for the team"} onChange={(event) => onPatch(order, "remarks", event.target.value)} /></td><td><button className={`save-row ${savedKey === key ? "saved" : ""}`} aria-label={`Save ${order.orderNumber}`} onClick={() => void onSave(order)} disabled={savingKey === key}>{savingKey === key ? <RefreshCw className="spin" size={16} /> : savedKey === key ? <Check size={16} /> : <Save size={16} />}</button></td></tr>;
+      return <tr key={key}><td className="entity-cell"><strong>{order.name}</strong></td><td><code>{order.orderNumber}</code></td><td>{formatDate(order.orderDate)}</td><td>{formatDate(order.shippedDate)}</td><td><span className="delay-badge">{order.businessDays} days</span></td>{sheetType === "DTC" ? <td>{order.group}</td> : <><td>{slaDays == null ? "—" : `${slaDays} days`}</td><td>{order.group}</td></>}<td>{canEdit ? <select aria-label={`Late reason for ${order.orderNumber}`} value={reason} onChange={(event) => onPatch(order, "reason", event.target.value)}><option value="">Select reason</option>{LATE_REASON_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select> : <span className="read-only-cell">{reason || "Not classified"}</span>}</td><td>{canEdit ? <input aria-label={`Remarks for ${order.orderNumber}`} value={remarks} placeholder={compact ? "Add note" : "Add context for the team"} onChange={(event) => onPatch(order, "remarks", event.target.value)} /> : <span className="read-only-cell">{remarks || "—"}</span>}</td>{canEdit && <td><button className={`save-row ${savedKey === key ? "saved" : ""}`} aria-label={`Save ${order.orderNumber}`} onClick={() => void onSave(order)} disabled={savingKey === key}>{savingKey === key ? <RefreshCw className="spin" size={16} /> : savedKey === key ? <Check size={16} /> : <Save size={16} />}</button></td>}</tr>;
     })}</tbody></table></div>
   );
 }

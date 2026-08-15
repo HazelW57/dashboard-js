@@ -89,6 +89,7 @@ main { min-height: 100vh; margin-left: 252px; }
 .intro-row p, .section-heading span, .panel-title span, .review-hero > div > span { margin: 0 0 5px; color: var(--teal); font-size: 9px; font-weight: 760; letter-spacing: .13em; text-transform: uppercase; }
 .intro-row h2 { margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: clamp(24px, 2.3vw, 34px); font-weight: 400; letter-spacing: -.035em; }
 .health-pill { display: inline-flex; align-items: center; gap: 7px; padding: 8px 11px; border: 1px solid #cbe4dd; border-radius: 999px; color: #19725f; background: #edf8f4; font-size: 10px; font-weight: 700; white-space: nowrap; }
+.read-only-pill { display: inline-flex; align-items: center; gap: 7px; padding: 9px 11px; border: 1px solid #d8e1e1; border-radius: 999px; color: #65777f; background: #f2f5f4; font-size: 9px; font-weight: 720; white-space: nowrap; }
 .metric-grid { display: grid; grid-template-columns: repeat(5, minmax(135px, 1fr)); gap: 12px; margin-bottom: 16px; }
 .metric-card { position: relative; min-height: 134px; padding: 17px 17px 15px; overflow: hidden; border: 1px solid var(--line); border-radius: 12px; background: var(--card); box-shadow: 0 8px 24px rgba(29, 55, 65, .035); }
 .metric-card::after { content: ""; position: absolute; right: -28px; bottom: -40px; width: 95px; height: 95px; border-radius: 50%; background: currentColor; opacity: .055; }
@@ -156,6 +157,7 @@ td strong { color: var(--ink-soft); font-weight: 620; }
 .late-table select, .late-table input { height: 32px; border: 1px solid #dfe5e5; border-radius: 7px; outline: 0; color: #4f626c; background: #fff; font-size: 9px; transition: .18s ease; }
 .late-table select { min-width: 146px; padding: 0 8px; }
 .late-table input { width: 190px; padding: 0 10px; }
+.read-only-cell { display: inline-block; max-width: 220px; overflow: hidden; color: #687981; text-overflow: ellipsis; vertical-align: middle; }
 .late-table select:focus, .late-table input:focus { border-color: #65a69f; box-shadow: 0 0 0 3px rgba(15, 118, 110, .08); }
 .save-row { display: grid; place-items: center; width: 32px; height: 32px; border: 1px solid #dbe4e3; border-radius: 7px; color: var(--teal); background: #f7faf9; }
 .save-row:hover { color: #fff; background: var(--teal); }
