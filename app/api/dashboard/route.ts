@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import type { DashboardData, ReasonEdit } from "../../lib/dashboard-types";
+import type { DashboardData, DashboardSnapshotSummary, ReasonEdit } from "../../lib/dashboard-types";
 import { getApiUser, getBindings, initializeStorage } from "../../lib/server-storage";
 
 export const runtime = "nodejs";
@@ -9,6 +9,11 @@ type DashboardRow = {
   source_filename: string;
   updated_by: string;
   updated_at: string;
+};
+
+type SnapshotRow = DashboardRow & {
+  snapshot_key: string;
+  report_label: string;
 };
 
 type ReasonRow = {
@@ -29,15 +34,35 @@ function readOnly() {
   return NextResponse.json({ error: "This account has view-only access" }, { status: 403 });
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const user = await getApiUser();
   if (!user) return unauthorized();
   const { DB } = getBindings();
   await initializeStorage(DB);
 
-  const state = await DB.prepare(
-    "SELECT dashboard_json, source_filename, updated_by, updated_at FROM dashboard_state WHERE id = 1",
-  ).first<DashboardRow>();
+  const requestedKey = new URL(request.url).searchParams.get("week")?.trim() || "";
+  const snapshotsResult = await DB.prepare(`SELECT snapshot_key, report_label,
+    source_filename, updated_by, updated_at
+    FROM dashboard_snapshots
+    ORDER BY updated_at DESC, report_label DESC`).all<Omit<SnapshotRow, "dashboard_json">>();
+  const snapshots: DashboardSnapshotSummary[] = (snapshotsResult.results ?? []).map((row) => ({
+    key: row.snapshot_key,
+    reportLabel: row.report_label,
+    sourceFilename: row.source_filename,
+    updatedBy: row.updated_by,
+    updatedAt: row.updated_at,
+  }));
+  const selectedSnapshotKey = requestedKey || snapshots[0]?.key || "";
+  const state = selectedSnapshotKey
+    ? await DB.prepare(`SELECT snapshot_key, report_label, dashboard_json,
+        source_filename, updated_by, updated_at
+        FROM dashboard_snapshots WHERE snapshot_key = ?`).bind(selectedSnapshotKey).first<SnapshotRow>()
+    : await DB.prepare(
+        "SELECT dashboard_json, source_filename, updated_by, updated_at FROM dashboard_state WHERE id = 1",
+      ).first<DashboardRow>();
+  if (requestedKey && !state) {
+    return NextResponse.json({ error: "Dashboard week not found" }, { status: 404 });
+  }
   const reasons = await DB.prepare(
     "SELECT order_key, order_number, dashboard_type, reason, remarks, updated_by, updated_at FROM late_reasons ORDER BY updated_at DESC",
   ).all<ReasonRow>();
@@ -54,6 +79,8 @@ export async function GET() {
 
   return NextResponse.json({
     dashboard: state ? JSON.parse(state.dashboard_json) : null,
+    snapshots,
+    selectedSnapshotKey: state && "snapshot_key" in state ? state.snapshot_key : null,
     reasonEdits,
     source: state
       ? { filename: state.source_filename, updatedBy: state.updated_by, updatedAt: state.updated_at }
@@ -99,6 +126,7 @@ export async function POST(request: Request) {
   });
 
   const payload = JSON.stringify(dashboard);
+  const snapshotKey = dashboard.meta.reportLabel.trim().slice(0, 300);
   await DB.batch([
     DB.prepare(
       "INSERT INTO uploads (filename, object_key, uploaded_by, report_label) VALUES (?, ?, ?, ?)",
@@ -111,7 +139,28 @@ export async function POST(request: Request) {
         source_filename = excluded.source_filename,
         updated_by = excluded.updated_by,
         updated_at = CURRENT_TIMESTAMP`).bind(payload, file.name, user.username),
+    DB.prepare(`INSERT INTO dashboard_snapshots
+      (snapshot_key, report_label, dashboard_json, source_filename, object_key, updated_by, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      ON CONFLICT(snapshot_key) DO UPDATE SET
+        report_label = excluded.report_label,
+        dashboard_json = excluded.dashboard_json,
+        source_filename = excluded.source_filename,
+        object_key = excluded.object_key,
+        updated_by = excluded.updated_by,
+        updated_at = CURRENT_TIMESTAMP`)
+      .bind(snapshotKey, dashboard.meta.reportLabel, payload, file.name, objectKey, user.username),
   ]);
 
-  return NextResponse.json({ dashboard, source: { filename: file.name, updatedBy: user.username } });
+  return NextResponse.json({
+    dashboard,
+    snapshot: {
+      key: snapshotKey,
+      reportLabel: dashboard.meta.reportLabel,
+      sourceFilename: file.name,
+      updatedBy: user.username,
+      updatedAt: new Date().toISOString(),
+    } satisfies DashboardSnapshotSummary,
+    source: { filename: file.name, updatedBy: user.username },
+  });
 }

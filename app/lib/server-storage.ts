@@ -31,6 +31,15 @@ export async function initializeStorage(db: D1Database) {
       updated_by TEXT NOT NULL,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS dashboard_snapshots (
+      snapshot_key TEXT PRIMARY KEY,
+      report_label TEXT NOT NULL,
+      dashboard_json TEXT NOT NULL,
+      source_filename TEXT NOT NULL,
+      object_key TEXT NOT NULL DEFAULT '',
+      updated_by TEXT NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
     db.prepare(`CREATE TABLE IF NOT EXISTS late_reasons (
       order_key TEXT PRIMARY KEY,
       order_number TEXT NOT NULL,
@@ -46,6 +55,8 @@ export async function initializeStorage(db: D1Database) {
       order_key TEXT NOT NULL,
       order_number TEXT NOT NULL,
       dashboard_type TEXT NOT NULL,
+      report_key TEXT NOT NULL DEFAULT '',
+      report_label TEXT NOT NULL DEFAULT '',
       entity_name TEXT NOT NULL DEFAULT '',
       order_date TEXT NOT NULL DEFAULT '',
       shipped_date TEXT NOT NULL DEFAULT '',
@@ -68,7 +79,17 @@ export async function initializeStorage(db: D1Database) {
       ON late_reason_history(dashboard_type, saved_at)`),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_uploads_uploaded_at
       ON uploads(uploaded_at)`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_dashboard_snapshots_updated_at
+      ON dashboard_snapshots(updated_at)`),
   ]);
+  await db.prepare(`INSERT OR IGNORE INTO dashboard_snapshots
+    (snapshot_key, report_label, dashboard_json, source_filename, updated_by, updated_at)
+    SELECT
+      COALESCE(NULLIF(json_extract(dashboard_json, '$.meta.reportLabel'), ''), 'Imported ' || updated_at),
+      COALESCE(NULLIF(json_extract(dashboard_json, '$.meta.reportLabel'), ''), 'Imported dashboard'),
+      dashboard_json, source_filename, updated_by, updated_at
+    FROM dashboard_state
+    WHERE id = 1`).run();
   await db.prepare(`INSERT OR IGNORE INTO late_reason_history
     (event_key, order_key, order_number, dashboard_type, reason, remarks, updated_by, saved_at)
     SELECT 'legacy:' || order_key || ':' || updated_at,

@@ -22,6 +22,20 @@
       "when": 1786836332592,
       "tag": "0002_mushy_wendell_vaughn",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "6",
+      "when": 1786836961359,
+      "tag": "0003_green_nitro",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1786837016214,
+      "tag": "0004_chilly_squadron_supreme",
+      "breakpoints": true
     }
   ]
 }

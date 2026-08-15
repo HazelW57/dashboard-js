@@ -18,6 +18,18 @@ export const dashboardState = sqliteTable("dashboard_state", {
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
 
+export const dashboardSnapshots = sqliteTable("dashboard_snapshots", {
+  snapshotKey: text("snapshot_key").primaryKey(),
+  reportLabel: text("report_label").notNull(),
+  dashboardJson: text("dashboard_json").notNull(),
+  sourceFilename: text("source_filename").notNull(),
+  objectKey: text("object_key").notNull().default(""),
+  updatedBy: text("updated_by").notNull(),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("idx_dashboard_snapshots_updated_at").on(table.updatedAt),
+]);
+
 export const lateReasons = sqliteTable("late_reasons", {
   orderKey: text("order_key").primaryKey(),
   orderNumber: text("order_number").notNull(),
@@ -34,6 +46,8 @@ export const lateReasonHistory = sqliteTable("late_reason_history", {
   orderKey: text("order_key").notNull(),
   orderNumber: text("order_number").notNull(),
   dashboardType: text("dashboard_type").notNull(),
+  reportKey: text("report_key").notNull().default(""),
+  reportLabel: text("report_label").notNull().default(""),
   entityName: text("entity_name").notNull().default(""),
   orderDate: text("order_date").notNull().default(""),
   shippedDate: text("shipped_date").notNull().default(""),

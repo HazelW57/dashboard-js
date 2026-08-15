@@ -16,6 +16,8 @@ type CurrentRow = {
 type HistoryRow = CurrentRow & {
   id: number;
   event_key: string;
+  report_key: string;
+  report_label: string;
   entity_name: string;
   order_date: string;
   shipped_date: string;
@@ -45,7 +47,7 @@ export async function GET() {
     DB.prepare(`SELECT order_key, order_number, dashboard_type, reason, remarks,
       updated_by, updated_at FROM late_reasons ORDER BY updated_at DESC`).all<CurrentRow>(),
     DB.prepare(`SELECT id, event_key, order_key, order_number, dashboard_type,
-      entity_name, order_date, shipped_date, processing_days, sla_days,
+      report_key, report_label, entity_name, order_date, shipped_date, processing_days, sla_days,
       reason, remarks, updated_by, saved_at
       FROM late_reason_history ORDER BY saved_at DESC, id DESC`).all<HistoryRow>(),
     DB.prepare("SELECT dashboard_json FROM dashboard_state WHERE id = 1").first<DashboardRow>(),
@@ -63,6 +65,8 @@ export async function GET() {
     const history = "entity_name" in row ? row : null;
     return {
       dashboardType: row.dashboard_type,
+      reportKey: history?.report_key || "",
+      reportLabel: history?.report_label || "",
       entityName: history?.entity_name || order?.name || "",
       orderNumber: row.order_number,
       orderDate: history?.order_date || order?.orderDate || "",

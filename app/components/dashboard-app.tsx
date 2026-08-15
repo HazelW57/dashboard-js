@@ -38,6 +38,7 @@ import {
   LATE_REASON_OPTIONS,
   orderKey,
   type DashboardData,
+  type DashboardSnapshotSummary,
   type LateOrder,
   type ReasonEdit,
 } from "../lib/dashboard-types";
@@ -93,6 +94,8 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
   const [view, setView] = useState<View>("DTC");
   const [lateSheet, setLateSheet] = useState<LateSheet>("DTC");
   const [dashboard, setDashboard] = useState<DashboardData>(sampleDashboard);
+  const [snapshots, setSnapshots] = useState<DashboardSnapshotSummary[]>([]);
+  const [selectedSnapshotKey, setSelectedSnapshotKey] = useState("");
   const [reasonEdits, setReasonEdits] = useState<Record<string, ReasonEdit>>({});
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -111,6 +114,8 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
       .then((payload) => {
         if (!active) return;
         if (payload.dashboard) setDashboard(payload.dashboard);
+        setSnapshots(payload.snapshots ?? []);
+        setSelectedSnapshotKey(payload.selectedSnapshotKey ?? payload.snapshots?.[0]?.key ?? "");
         const edits: Record<string, ReasonEdit> = {};
         for (const edit of payload.reasonEdits ?? []) edits[edit.orderKey] = edit;
         setReasonEdits(edits);
@@ -119,6 +124,24 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
       .finally(() => active && setLoading(false));
     return () => { active = false; };
   }, []);
+
+  async function selectSnapshot(snapshotKey: string) {
+    if (!snapshotKey || snapshotKey === selectedSnapshotKey) return;
+    setLoading(true);
+    try {
+      const response = await fetch(`/api/dashboard?week=${encodeURIComponent(snapshotKey)}`);
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Dashboard week could not be loaded");
+      if (payload.dashboard) setDashboard(payload.dashboard);
+      setSnapshots(payload.snapshots ?? []);
+      setSelectedSnapshotKey(payload.selectedSnapshotKey ?? snapshotKey);
+      const edits: Record<string, ReasonEdit> = {};
+      for (const edit of payload.reasonEdits ?? []) edits[edit.orderKey] = edit;
+      setReasonEdits(edits);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   const dtcLate = dashboard.dtc.lateOrders;
   const b2bLate = dashboard.b2b.lateOrders;
@@ -152,6 +175,10 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
       const payload = await response.json();
       if (!response.ok) throw new Error(payload.error || "Upload failed");
       setDashboard(payload.dashboard);
+      if (payload.snapshot) {
+        setSnapshots((current) => [payload.snapshot, ...current.filter((item) => item.key !== payload.snapshot.key)]);
+        setSelectedSnapshotKey(payload.snapshot.key);
+      }
       setUploadSuccess(true);
       window.setTimeout(() => setUploadOpen(false), 900);
     } catch (error) {
@@ -194,6 +221,8 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
       slaDays: order.slaDays ?? null,
     };
     edit.entityName = order.name;
+    edit.reportKey = selectedSnapshotKey;
+    edit.reportLabel = dashboard.meta.reportLabel;
     edit.orderDate = order.orderDate;
     edit.shippedDate = order.shippedDate;
     edit.processingDays = order.businessDays;
@@ -222,17 +251,17 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
       if (!response.ok) throw new Error(payload.error || "Export failed");
       const XLSX = await import("xlsx");
       const columns = [
-        "Dashboard Type", "Store / Account", "Order Number", "Order Date", "Shipped Date",
+        "Report Week", "Dashboard Type", "Store / Account", "Order Number", "Order Date", "Shipped Date",
         "Processing / Calendar Days", "SLA Days", "Late Reason", "Remarks", "Saved By", "Saved At",
       ];
       const rowsForExport = (rows: Array<Record<string, unknown>>) => rows.map((row) => [
-        row.dashboardType, row.entityName, row.orderNumber, row.orderDate, row.shippedDate,
+        row.reportLabel, row.dashboardType, row.entityName, row.orderNumber, row.orderDate, row.shippedDate,
         row.processingDays, row.slaDays, row.reason, row.remarks, row.updatedBy, row.savedAt,
       ]);
       const workbook = XLSX.utils.book_new();
       const currentSheet = XLSX.utils.aoa_to_sheet([columns, ...rowsForExport(payload.current ?? [])]);
       const historySheet = XLSX.utils.aoa_to_sheet([columns, ...rowsForExport(payload.history ?? [])]);
-      const widths = [14, 24, 20, 13, 13, 22, 10, 23, 34, 18, 22].map((wch) => ({ wch }));
+      const widths = [30, 14, 24, 20, 13, 13, 22, 10, 23, 34, 18, 22].map((wch) => ({ wch }));
       currentSheet["!cols"] = widths;
       historySheet["!cols"] = widths;
       XLSX.utils.book_append_sheet(workbook, currentSheet, "Current Reasons");
@@ -279,7 +308,20 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
             <h1>{activeLabel}</h1>
           </div>
           <div className="topbar-actions">
-            <div className="report-chip"><span>REPORT PERIOD</span><strong>{dashboard.meta.reportLabel}</strong></div>
+            {snapshots.length ? (
+              <label className="week-picker">
+                <span>REPORT WEEK</span>
+                <select
+                  aria-label="Select dashboard week"
+                  value={selectedSnapshotKey}
+                  onChange={(event) => void selectSnapshot(event.target.value)}
+                >
+                  {snapshots.map((snapshot) => (
+                    <option key={snapshot.key} value={snapshot.key}>{snapshot.reportLabel}</option>
+                  ))}
+                </select>
+              </label>
+            ) : <div className="report-chip"><span>REPORT PERIOD</span><strong>{dashboard.meta.reportLabel}</strong></div>}
             {canEdit ? <button className="btn-primary" onClick={() => setUploadOpen(true)}><Upload size={16} /> Update data</button> : <span className="read-only-pill"><ShieldCheck size={14} /> View only</span>}
           </div>
         </header>

@@ -93,12 +93,22 @@ export type DashboardData = {
   b2b: DashboardSection;
 };
 
+export type DashboardSnapshotSummary = {
+  key: string;
+  reportLabel: string;
+  sourceFilename: string;
+  updatedBy: string;
+  updatedAt: string;
+};
+
 export type ReasonEdit = {
   orderKey: string;
   orderNumber: string;
   dashboardType: "DTC" | "B2B";
   reason: string;
   remarks: string;
+  reportKey?: string;
+  reportLabel?: string;
   entityName?: string;
   orderDate?: string;
   shippedDate?: string;

@@ -16,6 +16,8 @@ export async function PATCH(request: Request) {
     orderNumber?: string;
     reason?: string;
     remarks?: string;
+    reportKey?: string;
+    reportLabel?: string;
     entityName?: string;
     orderDate?: string;
     shippedDate?: string;
@@ -26,6 +28,8 @@ export async function PATCH(request: Request) {
   const orderNumber = body.orderNumber?.trim();
   const reason = body.reason?.trim() ?? "";
   const remarks = body.remarks?.trim().slice(0, 500) ?? "";
+  const reportKey = body.reportKey?.trim().slice(0, 300) ?? "";
+  const reportLabel = body.reportLabel?.trim().slice(0, 300) ?? "";
   const entityName = body.entityName?.trim().slice(0, 160) ?? "";
   const orderDate = body.orderDate?.trim().slice(0, 30) ?? "";
   const shippedDate = body.shippedDate?.trim().slice(0, 30) ?? "";
@@ -52,10 +56,10 @@ export async function PATCH(request: Request) {
         updated_at = CURRENT_TIMESTAMP`)
       .bind(key, orderNumber, dashboardType, reason, remarks, user.username),
     DB.prepare(`INSERT INTO late_reason_history
-      (event_key, order_key, order_number, dashboard_type, entity_name, order_date,
+      (event_key, order_key, order_number, dashboard_type, report_key, report_label, entity_name, order_date,
        shipped_date, processing_days, sla_days, reason, remarks, updated_by, saved_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`)
-      .bind(crypto.randomUUID(), key, orderNumber, dashboardType, entityName, orderDate,
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)`)
+      .bind(crypto.randomUUID(), key, orderNumber, dashboardType, reportKey, reportLabel, entityName, orderDate,
         shippedDate, processingDays, slaDays, reason, remarks, user.username),
   ]);
 
