@@ -8,6 +8,7 @@ import type {
   SeriesPoint,
   TrendPoint,
 } from "./dashboard-types";
+import { confirmedB2bSlaDays } from "./dashboard-types";
 
 type Row = unknown[];
 
@@ -160,7 +161,7 @@ function readB2bPerformance(rows: Row[]): PerformanceRow[] {
     if (!name) break;
     output.push({
       name,
-      slaDays: asNullableNumber(row[slaCol]),
+      slaDays: confirmedB2bSlaDays(name, asNullableNumber(row[slaCol])),
       shippedOrders: asNumber(row[shippedCol]),
       units: asNumber(row[unitsCol]),
       onTimeRate: asNullableNumber(row[rateCol]),
@@ -182,18 +183,23 @@ function readLateOrders(rows: Row[], dashboardType: "DTC" | "B2B"): LateOrder[] 
   for (const row of rows.slice(found.rowIndex + 1)) {
     const orderNumber = asText(row[col("Order Number")]);
     if (!orderNumber) continue;
+    const name = asText(row[col(dashboardType === "DTC" ? "Store Name" : "Account")]);
     const calendarDays = asNumber(row[col("Calendar Days")]);
-    const slaDays = asNumber(row[col("SLA Days")]);
+    const slaDays = dashboardType === "B2B"
+      ? confirmedB2bSlaDays(name, asNullableNumber(row[col("SLA Days")]))
+      : null;
     output.push({
       dashboardType,
-      name: asText(row[col(dashboardType === "DTC" ? "Store Name" : "Account")]),
+      name,
       orderNumber,
       orderDate: asDate(row[col("Order Date")]),
       shippedDate: asDate(row[col("Shipped Date")]),
       businessDays: asNumber(row[col(dashboardType === "DTC" ? "Processing Business Days" : "Calendar Days")]),
+      calendarDays,
+      slaDays,
       group: dashboardType === "DTC"
         ? asText(row[col("Shipping Time Group")])
-        : `${Math.max(0, calendarDays - slaDays)} Days Over SLA`,
+        : `${Math.max(0, calendarDays - (slaDays ?? 0))} Days Over SLA`,
       reason: asText(row[col("Late Reason")]),
       remarks: asText(row[col("Remarks")]),
     });

@@ -33,6 +33,7 @@ import {
 import { useEffect, useMemo, useRef, useState } from "react";
 import { parseDashboardWorkbook } from "../lib/dashboard-parser";
 import {
+  confirmedB2bSlaDays,
   LATE_REASON_OPTIONS,
   orderKey,
   type DashboardData,
@@ -42,6 +43,7 @@ import {
 import { sampleDashboard } from "../lib/sample-dashboard";
 
 type View = "DTC" | "B2B" | "LATE";
+type LateSheet = "DTC" | "B2B";
 
 const numberFormat = new Intl.NumberFormat("en-US");
 const pct = (value: number | null | undefined) => value == null ? "Pending" : `${(value * 100).toFixed(1)}%`;
@@ -86,6 +88,7 @@ function EmptyLateOrders({ onUpload }: { onUpload: () => void }) {
 
 export function DashboardApp({ user, signOutHref }: { user: { name: string; email: string }; signOutHref: string }) {
   const [view, setView] = useState<View>("DTC");
+  const [lateSheet, setLateSheet] = useState<LateSheet>("DTC");
   const [dashboard, setDashboard] = useState<DashboardData>(sampleDashboard);
   const [reasonEdits, setReasonEdits] = useState<Record<string, ReasonEdit>>({});
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -120,16 +123,16 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; emai
     return edit ? { ...order, reason: edit.reason, remarks: edit.remarks } : order;
   }), [dtcLate, b2bLate, reasonEdits]);
 
-  const visibleLateOrders = view === "DTC"
-    ? allLateOrders.filter((order) => order.dashboardType === "DTC")
-    : view === "B2B"
-      ? allLateOrders.filter((order) => order.dashboardType === "B2B")
-      : allLateOrders;
+  const dtcSheetOrders = useMemo(() => allLateOrders.filter((order) => order.dashboardType === "DTC"), [allLateOrders]);
+  const b2bSheetOrders = useMemo(() => allLateOrders.filter((order) => order.dashboardType === "B2B"), [allLateOrders]);
+  const visibleLateOrders = view === "B2B" ? b2bSheetOrders : dtcSheetOrders;
+  const activeLateSheetOrders = lateSheet === "DTC" ? dtcSheetOrders : b2bSheetOrders;
+  const summaryOrders = view === "B2B" ? b2bSheetOrders : dtcSheetOrders;
 
   const reasonSummary = useMemo(() => LATE_REASON_OPTIONS.map((reason) => ({
     label: reason,
-    value: allLateOrders.filter((order) => order.reason === reason).length,
-  })).sort((a, b) => b.value - a.value), [allLateOrders]);
+    value: summaryOrders.filter((order) => order.reason === reason).length,
+  })).sort((a, b) => b.value - a.value), [summaryOrders]);
 
   async function uploadWorkbook(file?: File) {
     if (!file) return;
@@ -320,25 +323,40 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; emai
                 <div className="panel-title"><div><span>{view === "DTC" ? "Store" : "Account"} detail</span><h3>{view === "DTC" ? "Store performance" : "B2B account performance"}</h3></div></div>
                 <div className="table-scroll">
                   <table><thead><tr><th>{view === "DTC" ? "Store" : "Account"}</th>{view === "B2B" && <th>SLA</th>}<th>Orders</th><th>On time</th><th>Late</th></tr></thead>
-                    <tbody>{activeSection.performance.map((row) => <tr key={row.name}><td><strong>{row.name}</strong></td>{view === "B2B" && <td>{row.slaDays == null ? <span className="pending-tag">Pending</span> : `${row.slaDays} days`}</td>}<td>{numberFormat.format(row.shippedOrders)}</td><td><span className={(row.onTimeRate ?? 0) >= .95 ? "rate-good" : row.onTimeRate == null ? "rate-pending" : "rate-watch"}>{pct(row.onTimeRate)}</span></td><td>{row.lateOrders ?? "—"}</td></tr>)}</tbody>
+                    <tbody>{activeSection.performance.map((row) => {
+                      const slaDays = view === "B2B" ? confirmedB2bSlaDays(row.name, row.slaDays) : null;
+                      return <tr key={row.name}><td><strong>{row.name}</strong></td>{view === "B2B" && <td>{slaDays == null ? <span className="pending-tag">Pending</span> : `${slaDays} days`}</td>}<td>{numberFormat.format(row.shippedOrders)}</td><td><span className={(row.onTimeRate ?? 0) >= .95 ? "rate-good" : row.onTimeRate == null ? "rate-pending" : "rate-watch"}>{pct(row.onTimeRate)}</span></td><td>{row.lateOrders ?? "—"}</td></tr>;
+                    })}</tbody>
                   </table>
                 </div>
               </article>
               <article className="panel chart-panel reason-panel">
-                <div className="panel-title"><div><span>Root causes</span><h3>Late reason summary</h3></div></div>
-                {allLateOrders.length ? <ResponsiveContainer width="100%" height={300}><BarChart data={reasonSummary.slice(0, 6)} layout="vertical" margin={{ left: 18, right: 20 }}><CartesianGrid horizontal={false} stroke="#edf0f2" /><XAxis type="number" hide /><YAxis dataKey="label" type="category" width={125} tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "#5f6d76" }} /><Tooltip content={<ChartTooltip />} cursor={{ fill: "#f7f2ef" }} /><Bar dataKey="value" name="Late Orders" fill="#bd4c3f" radius={[0, 5, 5, 0]} /></BarChart></ResponsiveContainer> : <EmptyLateOrders onUpload={() => setUploadOpen(true)} />}
+                <div className="panel-title"><div><span>{view} root causes</span><h3>Latest late-reason summary</h3></div></div>
+                {summaryOrders.length ? <ResponsiveContainer width="100%" height={300}><BarChart data={reasonSummary.slice(0, 6)} layout="vertical" margin={{ left: 18, right: 20 }}><CartesianGrid horizontal={false} stroke="#edf0f2" /><XAxis type="number" hide /><YAxis dataKey="label" type="category" width={125} tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "#5f6d76" }} /><Tooltip content={<ChartTooltip />} cursor={{ fill: "#f7f2ef" }} /><Bar dataKey="value" name="Late Orders" fill="#bd4c3f" radius={[0, 5, 5, 0]} /></BarChart></ResponsiveContainer> : <EmptyLateOrders onUpload={() => setUploadOpen(true)} />}
               </article>
             </section>
 
             <section className="panel late-preview-panel">
               <div className="panel-title"><div><span>Action queue</span><h3>{view} late orders</h3></div><button className="btn-text" onClick={() => setView("LATE")}>Open full review <ChevronRight size={15} /></button></div>
-              {visibleLateOrders.length ? <LateOrderTable orders={visibleLateOrders.slice(0, 5)} edits={reasonEdits} savingKey={savingKey} savedKey={savedKey} onPatch={patchReason} onSave={saveReason} compact /> : <EmptyLateOrders onUpload={() => setUploadOpen(true)} />}
+              {visibleLateOrders.length ? <LateOrderTable sheetType={view as LateSheet} orders={visibleLateOrders.slice(0, 5)} edits={reasonEdits} savingKey={savingKey} savedKey={savedKey} onPatch={patchReason} onSave={saveReason} compact /> : <EmptyLateOrders onUpload={() => setUploadOpen(true)} />}
             </section>
           </div>
         ) : (
           <div className="dashboard-content review-content">
-            <section className="review-hero"><div><span>Collaborative workflow</span><h2>Complete every late-order reason</h2><p>Reason and remarks are saved independently from the workbook, so your team can keep updating the queue after each upload.</p></div><div className="review-stats"><div><strong>{allLateOrders.length}</strong><span>Total late</span></div><div><strong>{allLateOrders.filter((order) => order.reason).length}</strong><span>Classified</span></div><div><strong>{allLateOrders.filter((order) => !order.reason).length}</strong><span>Open</span></div></div></section>
-            <section className="panel review-table-panel"><div className="panel-title"><div><span>DTC + B2B</span><h3>Late order reason register</h3></div></div>{allLateOrders.length ? <LateOrderTable orders={allLateOrders} edits={reasonEdits} savingKey={savingKey} savedKey={savedKey} onPatch={patchReason} onSave={saveReason} /> : <EmptyLateOrders onUpload={() => setUploadOpen(true)} />}</section>
+            <section className="review-hero"><div><span>Collaborative workflow</span><h2>Complete every late-order reason</h2><p>Work in the two Excel-style sheets below. Saved reasons flow directly into the matching dashboard summary.</p></div><div className="review-stats"><div><strong>{activeLateSheetOrders.length}</strong><span>{lateSheet} late</span></div><div><strong>{activeLateSheetOrders.filter((order) => order.reason).length}</strong><span>Classified</span></div><div><strong>{activeLateSheetOrders.filter((order) => !order.reason).length}</strong><span>Open</span></div></div></section>
+            <section className="panel review-table-panel">
+              <div className="review-table-heading">
+                <div className="panel-title"><div><span>Editable workbook</span><h3>Late order reason register</h3></div></div>
+                <div className="sheet-tabs" role="tablist" aria-label="Late order sheets">
+                  <button type="button" role="tab" aria-selected={lateSheet === "DTC"} className={lateSheet === "DTC" ? "active" : ""} onClick={() => setLateSheet("DTC")}>DTC Late Orders <span>{dtcSheetOrders.length}</span></button>
+                  <button type="button" role="tab" aria-selected={lateSheet === "B2B"} className={lateSheet === "B2B" ? "active" : ""} onClick={() => setLateSheet("B2B")}>B2B Late Orders <span>{b2bSheetOrders.length}</span></button>
+                </div>
+              </div>
+              <p className="sheet-help">Fill in Late Reason and Remarks, then save the row. The {lateSheet} Dashboard latest summary updates immediately.</p>
+              <div role="tabpanel" aria-label={`${lateSheet} Late Orders`}>
+                {activeLateSheetOrders.length ? <LateOrderTable sheetType={lateSheet} orders={activeLateSheetOrders} edits={reasonEdits} savingKey={savingKey} savedKey={savedKey} onPatch={patchReason} onSave={saveReason} /> : <EmptyLateOrders onUpload={() => setUploadOpen(true)} />}
+              </div>
+            </section>
           </div>
         )}
       </main>
@@ -364,14 +382,15 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; emai
   );
 }
 
-function LateOrderTable({ orders, edits, savingKey, savedKey, onPatch, onSave, compact = false }: { orders: LateOrder[]; edits: Record<string, ReasonEdit>; savingKey: string; savedKey: string; onPatch: (order: LateOrder, field: "reason" | "remarks", value: string) => void; onSave: (order: LateOrder) => void; compact?: boolean }) {
+function LateOrderTable({ sheetType, orders, edits, savingKey, savedKey, onPatch, onSave, compact = false }: { sheetType: LateSheet; orders: LateOrder[]; edits: Record<string, ReasonEdit>; savingKey: string; savedKey: string; onPatch: (order: LateOrder, field: "reason" | "remarks", value: string) => void; onSave: (order: LateOrder) => void; compact?: boolean }) {
   return (
-    <div className="table-scroll late-table-wrap"><table className="late-table"><thead><tr><th>Type</th><th>Store / Account</th><th>Order</th><th>Dates</th><th>Delay</th><th>Late Reason</th><th>Remarks</th><th /></tr></thead><tbody>{orders.map((order) => {
+    <div className="table-scroll late-table-wrap"><table className={`late-table late-table-${sheetType.toLowerCase()}`}><thead><tr><th>{sheetType === "DTC" ? "Store Name" : "Account"}</th><th>Order Number</th><th>Order Date</th><th>Shipped Date</th><th>{sheetType === "DTC" ? "Processing Days" : "Calendar Days"}</th>{sheetType === "DTC" ? <th>Shipping Time Group</th> : <><th>SLA Days</th><th>Days Over SLA</th></>}<th>Late Reason</th><th>Remarks</th><th /></tr></thead><tbody>{orders.map((order) => {
       const key = orderKey(order.dashboardType, order.orderNumber);
       const edit = edits[key];
       const reason = edit?.reason ?? order.reason;
       const remarks = edit?.remarks ?? order.remarks;
-      return <tr key={key}><td><span className={`type-badge type-${order.dashboardType.toLowerCase()}`}>{order.dashboardType}</span></td><td><strong>{order.name}</strong><small>{order.group}</small></td><td><code>{order.orderNumber}</code></td><td><span>{formatDate(order.orderDate)} → {formatDate(order.shippedDate)}</span></td><td><span className="delay-badge">{order.businessDays} days</span></td><td><select aria-label={`Late reason for ${order.orderNumber}`} value={reason} onChange={(event) => onPatch(order, "reason", event.target.value)}><option value="">Select reason</option>{LATE_REASON_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></td><td><input aria-label={`Remarks for ${order.orderNumber}`} value={remarks} placeholder={compact ? "Add note" : "Add context for the team"} onChange={(event) => onPatch(order, "remarks", event.target.value)} /></td><td><button className={`save-row ${savedKey === key ? "saved" : ""}`} aria-label={`Save ${order.orderNumber}`} onClick={() => void onSave(order)} disabled={savingKey === key}>{savingKey === key ? <RefreshCw className="spin" size={16} /> : savedKey === key ? <Check size={16} /> : <Save size={16} />}</button></td></tr>;
+      const slaDays = sheetType === "B2B" ? confirmedB2bSlaDays(order.name, order.slaDays) : null;
+      return <tr key={key}><td className="entity-cell"><strong>{order.name}</strong></td><td><code>{order.orderNumber}</code></td><td>{formatDate(order.orderDate)}</td><td>{formatDate(order.shippedDate)}</td><td><span className="delay-badge">{order.businessDays} days</span></td>{sheetType === "DTC" ? <td>{order.group}</td> : <><td>{slaDays == null ? "—" : `${slaDays} days`}</td><td>{order.group}</td></>}<td><select aria-label={`Late reason for ${order.orderNumber}`} value={reason} onChange={(event) => onPatch(order, "reason", event.target.value)}><option value="">Select reason</option>{LATE_REASON_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select></td><td><input aria-label={`Remarks for ${order.orderNumber}`} value={remarks} placeholder={compact ? "Add note" : "Add context for the team"} onChange={(event) => onPatch(order, "remarks", event.target.value)} /></td><td><button className={`save-row ${savedKey === key ? "saved" : ""}`} aria-label={`Save ${order.orderNumber}`} onClick={() => void onSave(order)} disabled={savingKey === key}>{savingKey === key ? <RefreshCw className="spin" size={16} /> : savedKey === key ? <Check size={16} /> : <Save size={16} />}</button></td></tr>;
     })}</tbody></table></div>
   );
 }

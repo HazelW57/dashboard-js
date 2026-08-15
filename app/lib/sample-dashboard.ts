@@ -75,9 +75,9 @@ export const sampleDashboard: DashboardData = {
     performance: [
       { name: "Best Buy", shippedOrders: 2, units: 530, slaDays: 7, onTimeRate: 0, lateOrders: 2, severeLate: 2, ytdOrders: 182, ytdOnTimeRate: .978 },
       { name: "Target", shippedOrders: 25, units: 560, slaDays: 5, onTimeRate: 1, lateOrders: 0, severeLate: 0, ytdOrders: 815, ytdOnTimeRate: .898 },
-      { name: "Amazon", shippedOrders: 0, units: 0, slaDays: null, onTimeRate: null, lateOrders: null, severeLate: 0, ytdOrders: 62, ytdOnTimeRate: null },
+      { name: "Amazon", shippedOrders: 0, units: 0, slaDays: 7, onTimeRate: null, lateOrders: null, severeLate: 0, ytdOrders: 62, ytdOnTimeRate: null },
       { name: "Walmart", shippedOrders: 29, units: 852, slaDays: 7, onTimeRate: 1, lateOrders: 0, severeLate: 0, ytdOrders: 445, ytdOnTimeRate: .753 },
-      { name: "REI", shippedOrders: 0, units: 0, slaDays: null, onTimeRate: null, lateOrders: null, severeLate: 0, ytdOrders: 75, ytdOnTimeRate: null },
+      { name: "REI", shippedOrders: 0, units: 0, slaDays: 7, onTimeRate: null, lateOrders: null, severeLate: 0, ytdOrders: 75, ytdOnTimeRate: null },
     ],
     lateOrders: [],
   },

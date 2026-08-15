@@ -9,6 +9,15 @@ export const LATE_REASON_OPTIONS = [
   "Other",
 ] as const;
 
+export const CONFIRMED_B2B_SLA_DAYS: Record<string, number> = {
+  amazon: 7,
+  rei: 7,
+};
+
+export function confirmedB2bSlaDays(account: string, workbookValue?: number | null) {
+  return CONFIRMED_B2B_SLA_DAYS[account.trim().toLowerCase()] ?? workbookValue ?? null;
+}
+
 export type Kpis = {
   reportWeekOrders: number;
   onTimeRate: number;
@@ -50,6 +59,8 @@ export type LateOrder = {
   orderDate: string;
   shippedDate: string;
   businessDays: number;
+  calendarDays?: number;
+  slaDays?: number | null;
   group: string;
   reason: string;
   remarks: string;
