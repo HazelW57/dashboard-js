@@ -99,6 +99,11 @@ export type ReasonEdit = {
   dashboardType: "DTC" | "B2B";
   reason: string;
   remarks: string;
+  entityName?: string;
+  orderDate?: string;
+  shippedDate?: string;
+  processingDays?: number;
+  slaDays?: number | null;
   updatedBy?: string;
   updatedAt?: string;
 };

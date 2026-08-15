@@ -40,6 +40,22 @@ export async function initializeStorage(db: D1Database) {
       updated_by TEXT NOT NULL,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`),
+    db.prepare(`CREATE TABLE IF NOT EXISTS late_reason_history (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      event_key TEXT NOT NULL UNIQUE,
+      order_key TEXT NOT NULL,
+      order_number TEXT NOT NULL,
+      dashboard_type TEXT NOT NULL,
+      entity_name TEXT NOT NULL DEFAULT '',
+      order_date TEXT NOT NULL DEFAULT '',
+      shipped_date TEXT NOT NULL DEFAULT '',
+      processing_days INTEGER NOT NULL DEFAULT 0,
+      sla_days INTEGER,
+      reason TEXT NOT NULL DEFAULT '',
+      remarks TEXT NOT NULL DEFAULT '',
+      updated_by TEXT NOT NULL,
+      saved_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`),
     db.prepare(`CREATE TABLE IF NOT EXISTS login_attempts (
       identifier TEXT PRIMARY KEY,
       attempts INTEGER NOT NULL DEFAULT 0,
@@ -48,8 +64,19 @@ export async function initializeStorage(db: D1Database) {
     )`),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_late_reasons_type
       ON late_reasons(dashboard_type, updated_at)`),
+    db.prepare(`CREATE INDEX IF NOT EXISTS idx_late_reason_history_type_saved
+      ON late_reason_history(dashboard_type, saved_at)`),
     db.prepare(`CREATE INDEX IF NOT EXISTS idx_uploads_uploaded_at
       ON uploads(uploaded_at)`),
   ]);
+  await db.prepare(`INSERT OR IGNORE INTO late_reason_history
+    (event_key, order_key, order_number, dashboard_type, reason, remarks, updated_by, saved_at)
+    SELECT 'legacy:' || order_key || ':' || updated_at,
+      order_key, order_number, dashboard_type, reason, remarks, updated_by, updated_at
+    FROM late_reasons
+    WHERE NOT EXISTS (
+      SELECT 1 FROM late_reason_history
+      WHERE late_reason_history.order_key = late_reasons.order_key
+    )`).run();
   await db.prepare("PRAGMA optimize").run();
 }

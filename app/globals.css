@@ -166,11 +166,15 @@ td strong { color: var(--ink-soft); font-weight: 620; }
 .review-content { padding-top: 24px; }
 .review-table-heading { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; }
 .review-table-heading .panel-title { margin-bottom: 0; }
+.review-tools { display: flex; align-items: flex-end; gap: 10px; }
 .sheet-tabs { display: flex; align-items: flex-end; gap: 4px; border-bottom: 1px solid #dfe6e5; }
 .sheet-tabs button { display: inline-flex; align-items: center; gap: 8px; padding: 10px 13px 9px; border: 0; border-bottom: 2px solid transparent; color: #7a898f; background: transparent; font-size: 9px; font-weight: 720; letter-spacing: .02em; }
 .sheet-tabs button span { display: grid; min-width: 21px; height: 21px; place-items: center; padding: 0 6px; border-radius: 999px; color: #728187; background: #eef2f1; font-size: 8px; }
 .sheet-tabs button.active { border-bottom-color: var(--teal); color: var(--teal); }
 .sheet-tabs button.active span { color: #fff; background: var(--teal); }
+.export-button { display: inline-flex; align-items: center; gap: 7px; min-height: 40px; padding: 0 12px; border: 1px solid #d4dfdd; border-radius: 8px; color: #315b66; background: #f7faf9; font-size: 9px; font-weight: 720; white-space: nowrap; }
+.export-button:hover { border-color: #8cb7b0; color: var(--teal); background: #eff7f5; }
+.export-button:disabled { cursor: wait; opacity: .65; }
 .sheet-help { margin: 13px 0 12px; color: #7a898f; font-size: 9px; }
 .review-hero { display: flex; align-items: center; justify-content: space-between; gap: 30px; margin-bottom: 17px; padding: 25px 28px; border-radius: 15px; color: #edf6f5; background: linear-gradient(115deg, #143848, #0b5f5a); box-shadow: 0 14px 35px rgba(18, 46, 61, .12); }
 .review-hero > div > span { color: #85d1c6; }
@@ -261,6 +265,7 @@ td strong { color: var(--ink-soft); font-weight: 620; }
   .chart-grid { grid-template-columns: 1fr; }
   .review-hero { align-items: flex-start; flex-direction: column; }
   .review-table-heading { align-items: stretch; flex-direction: column; }
+  .review-tools { align-items: stretch; flex-direction: column; }
   .sheet-tabs { width: 100%; }
   .sheet-tabs button { flex: 1; justify-content: center; }
 }

@@ -6,6 +6,7 @@ import {
   Check,
   CheckCircle2,
   ChevronRight,
+  Download,
   FileSpreadsheet,
   LayoutDashboard,
   LogOut,
@@ -100,6 +101,7 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
   const [savingKey, setSavingKey] = useState("");
   const [savedKey, setSavedKey] = useState("");
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -185,7 +187,17 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
       dashboardType: order.dashboardType,
       reason: order.reason,
       remarks: order.remarks,
+      entityName: order.name,
+      orderDate: order.orderDate,
+      shippedDate: order.shippedDate,
+      processingDays: order.businessDays,
+      slaDays: order.slaDays ?? null,
     };
+    edit.entityName = order.name;
+    edit.orderDate = order.orderDate;
+    edit.shippedDate = order.shippedDate;
+    edit.processingDays = order.businessDays;
+    edit.slaDays = order.slaDays ?? null;
     setSavingKey(key);
     setSavedKey("");
     try {
@@ -199,6 +211,35 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
       window.setTimeout(() => setSavedKey(""), 1800);
     } finally {
       setSavingKey("");
+    }
+  }
+
+  async function exportLateReasonHistory() {
+    setExporting(true);
+    try {
+      const response = await fetch("/api/late-reasons/export");
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Export failed");
+      const XLSX = await import("xlsx");
+      const columns = [
+        "Dashboard Type", "Store / Account", "Order Number", "Order Date", "Shipped Date",
+        "Processing / Calendar Days", "SLA Days", "Late Reason", "Remarks", "Saved By", "Saved At",
+      ];
+      const rowsForExport = (rows: Array<Record<string, unknown>>) => rows.map((row) => [
+        row.dashboardType, row.entityName, row.orderNumber, row.orderDate, row.shippedDate,
+        row.processingDays, row.slaDays, row.reason, row.remarks, row.updatedBy, row.savedAt,
+      ]);
+      const workbook = XLSX.utils.book_new();
+      const currentSheet = XLSX.utils.aoa_to_sheet([columns, ...rowsForExport(payload.current ?? [])]);
+      const historySheet = XLSX.utils.aoa_to_sheet([columns, ...rowsForExport(payload.history ?? [])]);
+      const widths = [14, 24, 20, 13, 13, 22, 10, 23, 34, 18, 22].map((wch) => ({ wch }));
+      currentSheet["!cols"] = widths;
+      historySheet["!cols"] = widths;
+      XLSX.utils.book_append_sheet(workbook, currentSheet, "Current Reasons");
+      XLSX.utils.book_append_sheet(workbook, historySheet, "Change History");
+      XLSX.writeFile(workbook, `Jiant-Late-Reason-History-${new Date().toISOString().slice(0, 10)}.xlsx`, { compression: true });
+    } finally {
+      setExporting(false);
     }
   }
 
@@ -350,9 +391,12 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
             <section className="panel review-table-panel">
               <div className="review-table-heading">
                 <div className="panel-title"><div><span>Editable workbook</span><h3>Late order reason register</h3></div></div>
-                <div className="sheet-tabs" role="tablist" aria-label="Late order sheets">
-                  <button type="button" role="tab" aria-selected={lateSheet === "DTC"} className={lateSheet === "DTC" ? "active" : ""} onClick={() => setLateSheet("DTC")}>DTC Late Orders <span>{dtcSheetOrders.length}</span></button>
-                  <button type="button" role="tab" aria-selected={lateSheet === "B2B"} className={lateSheet === "B2B" ? "active" : ""} onClick={() => setLateSheet("B2B")}>B2B Late Orders <span>{b2bSheetOrders.length}</span></button>
+                <div className="review-tools">
+                  <div className="sheet-tabs" role="tablist" aria-label="Late order sheets">
+                    <button type="button" role="tab" aria-selected={lateSheet === "DTC"} className={lateSheet === "DTC" ? "active" : ""} onClick={() => setLateSheet("DTC")}>DTC Late Orders <span>{dtcSheetOrders.length}</span></button>
+                    <button type="button" role="tab" aria-selected={lateSheet === "B2B"} className={lateSheet === "B2B" ? "active" : ""} onClick={() => setLateSheet("B2B")}>B2B Late Orders <span>{b2bSheetOrders.length}</span></button>
+                  </div>
+                  <button type="button" className="export-button" onClick={() => void exportLateReasonHistory()} disabled={exporting}><Download size={15} /> {exporting ? "Exporting…" : "Export history"}</button>
                 </div>
               </div>
               <p className="sheet-help">{canEdit ? `Fill in Late Reason and Remarks, then save the row. The ${lateSheet} Dashboard latest summary updates immediately.` : "View-only account: Late Reason and Remarks cannot be changed."}</p>
