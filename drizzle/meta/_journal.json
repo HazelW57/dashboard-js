@@ -1,0 +1,20 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "6",
+      "when": 1786831207731,
+      "tag": "0000_kind_lifeguard",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1786831383568,
+      "tag": "0001_adorable_stepford_cuckoos",
+      "breakpoints": true
+    }
+  ]
+}
