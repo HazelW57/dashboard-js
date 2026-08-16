@@ -1,4 +1,19 @@
-# vinext-starter
+# Jiant Solutions Shipping Performance Dashboard
+
+Internal shipping dashboard for Jiant Solutions. It keeps weekly dashboard snapshots, preserves late-reason history, and supports a view-only account plus an editor account.
+
+## Weekly ShipStation sync
+
+The GitHub Actions workflow in `.github/workflows/weekly-shipstation-sync.yml` runs every Sunday at 10:00 UTC. It exports only shipped ShipStation V2 records, merges label-purchased shipments with fulfillments, deduplicates by order number, and builds the completed Sunday–Saturday dashboard week.
+
+Repository Actions secrets required:
+
+- `SHIPSTATION_API_KEY`
+- `DASHBOARD_SYNC_TOKEN` (must match the secret stored in the Sites production environment)
+
+The shipped CSV is retained as a private workflow artifact for 90 days and is also stored with the weekly dashboard snapshot in the site's private object storage. A manual run can optionally specify a Sunday in `YYYY-MM-DD` format.
+
+## Local development
 
 A clean full-stack starter running on
 [vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and

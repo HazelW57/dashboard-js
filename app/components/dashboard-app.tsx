@@ -208,7 +208,7 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
   async function saveReason(order: LateOrder) {
     if (!canEdit) return;
     const key = orderKey(order.dashboardType, order.orderNumber);
-    const edit = reasonEdits[key] ?? {
+    const currentEdit = reasonEdits[key] ?? {
       orderKey: key,
       orderNumber: order.orderNumber,
       dashboardType: order.dashboardType,
@@ -220,13 +220,16 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
       processingDays: order.businessDays,
       slaDays: order.slaDays ?? null,
     };
-    edit.entityName = order.name;
-    edit.reportKey = selectedSnapshotKey;
-    edit.reportLabel = dashboard.meta.reportLabel;
-    edit.orderDate = order.orderDate;
-    edit.shippedDate = order.shippedDate;
-    edit.processingDays = order.businessDays;
-    edit.slaDays = order.slaDays ?? null;
+    const edit = {
+      ...currentEdit,
+      entityName: order.name,
+      reportKey: selectedSnapshotKey,
+      reportLabel: dashboard.meta.reportLabel,
+      orderDate: order.orderDate,
+      shippedDate: order.shippedDate,
+      processingDays: order.businessDays,
+      slaDays: order.slaDays ?? null,
+    };
     setSavingKey(key);
     setSavedKey("");
     try {

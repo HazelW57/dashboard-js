@@ -1,0 +1,37 @@
+name: Weekly ShipStation dashboard sync
+
+on:
+  schedule:
+    - cron: "0 10 * * 0"
+  workflow_dispatch:
+    inputs:
+      week_start:
+        description: Optional Sunday in YYYY-MM-DD format
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Export shipped orders and update dashboard
+        env:
+          SHIPSTATION_API_KEY: ${{ secrets.SHIPSTATION_API_KEY }}
+          DASHBOARD_SYNC_TOKEN: ${{ secrets.DASHBOARD_SYNC_TOKEN }}
+          SYNC_DASHBOARD_URL: https://dashboard.jiantsolutions.com
+          SYNC_WEEK_START: ${{ inputs.week_start }}
+        run: node scripts/sync-shipstation.mjs
+      - name: Keep the shipped CSV as a workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: shipstation-shipped-input
+          path: sync-output/*.csv
+          retention-days: 90
