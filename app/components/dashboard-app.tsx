@@ -9,6 +9,7 @@ import {
   Download,
   FileSpreadsheet,
   LayoutDashboard,
+  ListFilter,
   LogOut,
   PackageCheck,
   RefreshCw,
@@ -56,6 +57,15 @@ const formatDate = (value: string) => {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 };
 
+const shippedDateNewestFirst = (left: LateOrder, right: LateOrder) => {
+  const leftTime = Date.parse(left.shippedDate);
+  const rightTime = Date.parse(right.shippedDate);
+  const shippedDateDifference = (Number.isNaN(rightTime) ? 0 : rightTime) - (Number.isNaN(leftTime) ? 0 : leftTime);
+  if (shippedDateDifference) return shippedDateDifference;
+  const orderDateDifference = (right.orderDate || "").localeCompare(left.orderDate || "");
+  return orderDateDifference || left.orderNumber.localeCompare(right.orderNumber);
+};
+
 function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ name: string; value: number; color: string }>; label?: string }) {
   if (!active || !payload?.length) return null;
   return (
@@ -97,6 +107,8 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
   const [snapshots, setSnapshots] = useState<DashboardSnapshotSummary[]>([]);
   const [selectedSnapshotKey, setSelectedSnapshotKey] = useState("");
   const [reasonEdits, setReasonEdits] = useState<Record<string, ReasonEdit>>({});
+  const [dirtyReasonKeys, setDirtyReasonKeys] = useState<Set<string>>(() => new Set());
+  const [unfilledOnly, setUnfilledOnly] = useState(false);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
@@ -119,6 +131,7 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
         const edits: Record<string, ReasonEdit> = {};
         for (const edit of payload.reasonEdits ?? []) edits[edit.orderKey] = edit;
         setReasonEdits(edits);
+        setDirtyReasonKeys(new Set());
       })
       .catch(() => undefined)
       .finally(() => active && setLoading(false));
@@ -138,6 +151,7 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
       const edits: Record<string, ReasonEdit> = {};
       for (const edit of payload.reasonEdits ?? []) edits[edit.orderKey] = edit;
       setReasonEdits(edits);
+      setDirtyReasonKeys(new Set());
     } finally {
       setLoading(false);
     }
@@ -150,10 +164,15 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
     return edit ? { ...order, reason: edit.reason, remarks: edit.remarks } : order;
   }), [dtcLate, b2bLate, reasonEdits]);
 
-  const dtcSheetOrders = useMemo(() => allLateOrders.filter((order) => order.dashboardType === "DTC"), [allLateOrders]);
-  const b2bSheetOrders = useMemo(() => allLateOrders.filter((order) => order.dashboardType === "B2B"), [allLateOrders]);
+  const dtcSheetOrders = useMemo(() => allLateOrders.filter((order) => order.dashboardType === "DTC").sort(shippedDateNewestFirst), [allLateOrders]);
+  const b2bSheetOrders = useMemo(() => allLateOrders.filter((order) => order.dashboardType === "B2B").sort(shippedDateNewestFirst), [allLateOrders]);
   const visibleLateOrders = view === "B2B" ? b2bSheetOrders : dtcSheetOrders;
   const activeLateSheetOrders = lateSheet === "DTC" ? dtcSheetOrders : b2bSheetOrders;
+  const openLateOrderCount = activeLateSheetOrders.filter((order) => !order.reason.trim()).length;
+  const filteredLateSheetOrders = useMemo(() => {
+    if (!unfilledOnly) return activeLateSheetOrders;
+    return activeLateSheetOrders.filter((order) => !order.reason.trim() || dirtyReasonKeys.has(orderKey(order.dashboardType, order.orderNumber)));
+  }, [activeLateSheetOrders, dirtyReasonKeys, unfilledOnly]);
   const summaryOrders = view === "B2B" ? b2bSheetOrders : dtcSheetOrders;
 
   const reasonSummary = useMemo(() => LATE_REASON_OPTIONS.map((reason) => ({
@@ -203,6 +222,7 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
         [field]: value,
       },
     }));
+    setDirtyReasonKeys((current) => new Set(current).add(key));
   }
 
   async function saveReason(order: LateOrder) {
@@ -239,6 +259,11 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
         body: JSON.stringify(edit),
       });
       if (!response.ok) throw new Error();
+      setDirtyReasonKeys((current) => {
+        const next = new Set(current);
+        next.delete(key);
+        return next;
+      });
       setSavedKey(key);
       window.setTimeout(() => setSavedKey(""), 1800);
     } finally {
@@ -432,7 +457,7 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
           </div>
         ) : (
           <div className="dashboard-content review-content">
-            <section className="review-hero"><div><span>{canEdit ? "Collaborative workflow" : "Read-only register"}</span><h2>{canEdit ? "Complete every late-order reason" : "Review every late-order reason"}</h2><p>{canEdit ? "Work in the two Excel-style sheets below. Saved reasons flow directly into the matching dashboard summary." : "This account can review saved reasons and remarks but cannot change them."}</p></div><div className="review-stats"><div><strong>{activeLateSheetOrders.length}</strong><span>{lateSheet} late</span></div><div><strong>{activeLateSheetOrders.filter((order) => order.reason).length}</strong><span>Classified</span></div><div><strong>{activeLateSheetOrders.filter((order) => !order.reason).length}</strong><span>Open</span></div></div></section>
+            <section className="review-hero"><div><span>{canEdit ? "Collaborative workflow" : "Read-only register"}</span><h2>{canEdit ? "Complete every late-order reason" : "Review every late-order reason"}</h2><p>{canEdit ? "Work in the two Excel-style sheets below. Saved reasons flow directly into the matching dashboard summary." : "This account can review saved reasons and remarks but cannot change them."}</p></div><div className="review-stats"><div><strong>{activeLateSheetOrders.length}</strong><span>{lateSheet} late</span></div><div><strong>{activeLateSheetOrders.filter((order) => order.reason).length}</strong><span>Classified</span></div><div><strong>{openLateOrderCount}</strong><span>Open</span></div></div></section>
             <section className="panel review-table-panel">
               <div className="review-table-heading">
                 <div className="panel-title"><div><span>Editable workbook</span><h3>Late order reason register</h3></div></div>
@@ -441,12 +466,13 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
                     <button type="button" role="tab" aria-selected={lateSheet === "DTC"} className={lateSheet === "DTC" ? "active" : ""} onClick={() => setLateSheet("DTC")}>DTC Late Orders <span>{dtcSheetOrders.length}</span></button>
                     <button type="button" role="tab" aria-selected={lateSheet === "B2B"} className={lateSheet === "B2B" ? "active" : ""} onClick={() => setLateSheet("B2B")}>B2B Late Orders <span>{b2bSheetOrders.length}</span></button>
                   </div>
+                  <button type="button" className={`filter-button ${unfilledOnly ? "active" : ""}`} aria-pressed={unfilledOnly} onClick={() => setUnfilledOnly((current) => !current)}><ListFilter size={15} /> Unfilled only <span>{openLateOrderCount}</span></button>
                   <button type="button" className="export-button" onClick={() => void exportLateReasonHistory()} disabled={exporting}><Download size={15} /> {exporting ? "Exporting…" : "Export history"}</button>
                 </div>
               </div>
-              <p className="sheet-help">{canEdit ? `Fill in Late Reason and Remarks, then save the row. The ${lateSheet} Dashboard latest summary updates immediately.` : "View-only account: Late Reason and Remarks cannot be changed."}</p>
+              <p className="sheet-help">{canEdit ? `Fill in Late Reason and Remarks, then save the row. The ${lateSheet} Dashboard latest summary updates immediately.` : "View-only account: Late Reason and Remarks cannot be changed."} Rows are sorted by Shipped Date, newest first.</p>
               <div role="tabpanel" aria-label={`${lateSheet} Late Orders`}>
-                {activeLateSheetOrders.length ? <LateOrderTable canEdit={canEdit} sheetType={lateSheet} orders={activeLateSheetOrders} edits={reasonEdits} savingKey={savingKey} savedKey={savedKey} onPatch={patchReason} onSave={saveReason} /> : <EmptyLateOrders canUpload={canEdit} onUpload={() => setUploadOpen(true)} />}
+                {filteredLateSheetOrders.length ? <LateOrderTable canEdit={canEdit} sheetType={lateSheet} orders={filteredLateSheetOrders} edits={reasonEdits} savingKey={savingKey} savedKey={savedKey} onPatch={patchReason} onSave={saveReason} /> : activeLateSheetOrders.length && unfilledOnly ? <div className="filtered-empty"><CheckCircle2 size={24} /><strong>All late reasons are filled</strong><span>Turn off “Unfilled only” to review every order.</span></div> : <EmptyLateOrders canUpload={canEdit} onUpload={() => setUploadOpen(true)} />}
               </div>
             </section>
           </div>
