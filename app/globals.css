@@ -176,10 +176,16 @@ td strong { color: var(--ink-soft); font-weight: 620; }
 .sheet-tabs button span { display: grid; min-width: 21px; height: 21px; place-items: center; padding: 0 6px; border-radius: 999px; color: #728187; background: #eef2f1; font-size: 8px; }
 .sheet-tabs button.active { border-bottom-color: var(--teal); color: var(--teal); }
 .sheet-tabs button.active span { color: #fff; background: var(--teal); }
-.export-button { display: inline-flex; align-items: center; gap: 7px; min-height: 40px; padding: 0 12px; border: 1px solid #d4dfdd; border-radius: 8px; color: #315b66; background: #f7faf9; font-size: 9px; font-weight: 720; white-space: nowrap; }
-.export-button:hover { border-color: #8cb7b0; color: var(--teal); background: #eff7f5; }
+.export-button, .filter-button { display: inline-flex; align-items: center; gap: 7px; min-height: 40px; padding: 0 12px; border: 1px solid #d4dfdd; border-radius: 8px; color: #315b66; background: #f7faf9; font-size: 9px; font-weight: 720; white-space: nowrap; }
+.export-button:hover, .filter-button:hover { border-color: #8cb7b0; color: var(--teal); background: #eff7f5; }
+.filter-button span { display: grid; min-width: 19px; height: 19px; place-items: center; padding: 0 5px; border-radius: 999px; color: #65777f; background: #e8eeee; font-size: 8px; }
+.filter-button.active { border-color: var(--teal); color: #fff; background: var(--teal); }
+.filter-button.active span { color: var(--teal); background: #fff; }
 .export-button:disabled { cursor: wait; opacity: .65; }
 .sheet-help { margin: 13px 0 12px; color: #7a898f; font-size: 9px; }
+.filtered-empty { display: flex; min-height: 210px; flex-direction: column; align-items: center; justify-content: center; gap: 7px; color: #2a846e; text-align: center; }
+.filtered-empty strong { color: var(--ink); font-size: 13px; }
+.filtered-empty span { color: #7a898f; font-size: 10px; }
 .review-hero { display: flex; align-items: center; justify-content: space-between; gap: 30px; margin-bottom: 17px; padding: 25px 28px; border-radius: 15px; color: #edf6f5; background: linear-gradient(115deg, #143848, #0b5f5a); box-shadow: 0 14px 35px rgba(18, 46, 61, .12); }
 .review-hero > div > span { color: #85d1c6; }
 .review-hero h2 { margin: 4px 0 8px; font-family: Georgia, serif; font-size: 27px; font-weight: 400; }
