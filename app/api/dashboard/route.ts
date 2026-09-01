@@ -22,6 +22,8 @@ type ReasonRow = {
   dashboard_type: "DTC" | "B2B";
   reason: string;
   remarks: string;
+  confirmed_not_late: number;
+  js_fault: number;
   updated_by: string;
   updated_at: string;
 };
@@ -64,7 +66,9 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "Dashboard week not found" }, { status: 404 });
   }
   const reasons = await DB.prepare(
-    "SELECT order_key, order_number, dashboard_type, reason, remarks, updated_by, updated_at FROM late_reasons ORDER BY updated_at DESC",
+    `SELECT order_key, order_number, dashboard_type, reason, remarks,
+      confirmed_not_late, js_fault, updated_by, updated_at
+      FROM late_reasons ORDER BY updated_at DESC`,
   ).all<ReasonRow>();
 
   const reasonEdits: ReasonEdit[] = (reasons.results ?? []).map((row: ReasonRow) => ({
@@ -73,6 +77,8 @@ export async function GET(request: Request) {
     dashboardType: row.dashboard_type,
     reason: row.reason,
     remarks: row.remarks,
+    confirmedNotLate: Boolean(row.confirmed_not_late),
+    jsFault: Boolean(row.js_fault),
     updatedBy: row.updated_by,
     updatedAt: row.updated_at,
   }));

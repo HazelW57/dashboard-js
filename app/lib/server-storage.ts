@@ -46,6 +46,8 @@ export async function initializeStorage(db: D1Database) {
       dashboard_type TEXT NOT NULL,
       reason TEXT NOT NULL DEFAULT '',
       remarks TEXT NOT NULL DEFAULT '',
+      confirmed_not_late INTEGER NOT NULL DEFAULT 0,
+      js_fault INTEGER NOT NULL DEFAULT 1,
       updated_by TEXT NOT NULL,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`),
@@ -64,6 +66,8 @@ export async function initializeStorage(db: D1Database) {
       sla_days INTEGER,
       reason TEXT NOT NULL DEFAULT '',
       remarks TEXT NOT NULL DEFAULT '',
+      confirmed_not_late INTEGER NOT NULL DEFAULT 0,
+      js_fault INTEGER NOT NULL DEFAULT 1,
       updated_by TEXT NOT NULL,
       saved_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`),

@@ -27,6 +27,8 @@ import {
   ComposedChart,
   Legend,
   Line,
+  Pie,
+  PieChart,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -36,6 +38,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { parseDashboardWorkbook } from "../lib/dashboard-parser";
 import {
   confirmedB2bSlaDays,
+  defaultJsFaultForReason,
   LATE_REASON_OPTIONS,
   orderKey,
   type DashboardData,
@@ -65,6 +68,20 @@ const shippedDateNewestFirst = (left: LateOrder, right: LateOrder) => {
   const orderDateDifference = (right.orderDate || "").localeCompare(left.orderDate || "");
   return orderDateDifference || left.orderNumber.localeCompare(right.orderNumber);
 };
+
+function reportDateRange(label: string) {
+  const match = label.match(/([A-Z][a-z]{2}) (\d{1,2})[–-]([A-Z][a-z]{2}) (\d{1,2}), (\d{4})/);
+  if (!match) return null;
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const startMonth = months.indexOf(match[1]);
+  const endMonth = months.indexOf(match[3]);
+  if (startMonth < 0 || endMonth < 0) return null;
+  const endYear = Number(match[5]);
+  const startYear = startMonth > endMonth ? endYear - 1 : endYear;
+  const toIso = (year: number, month: number, day: number) =>
+    new Date(Date.UTC(year, month, day)).toISOString().slice(0, 10);
+  return { start: toIso(startYear, startMonth, Number(match[2])), end: toIso(endYear, endMonth, Number(match[4])) };
+}
 
 function ChartTooltip({ active, payload, label }: { active?: boolean; payload?: Array<{ name: string; value: number; color: string }>; label?: string }) {
   if (!active || !payload?.length) return null;
@@ -115,6 +132,7 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
   const [uploadSuccess, setUploadSuccess] = useState(false);
   const [savingKey, setSavingKey] = useState("");
   const [savedKey, setSavedKey] = useState("");
+  const [savingAll, setSavingAll] = useState(false);
   const [loading, setLoading] = useState(true);
   const [exporting, setExporting] = useState(false);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -161,19 +179,58 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
   const b2bLate = dashboard.b2b.lateOrders;
   const allLateOrders = useMemo(() => [...dtcLate, ...b2bLate].map((order) => {
     const edit = reasonEdits[orderKey(order.dashboardType, order.orderNumber)];
-    return edit ? { ...order, reason: edit.reason, remarks: edit.remarks } : order;
+    return edit
+      ? { ...order, reason: edit.reason, remarks: edit.remarks, confirmedNotLate: edit.confirmedNotLate, jsFault: edit.jsFault }
+      : { ...order, confirmedNotLate: false, jsFault: defaultJsFaultForReason(order.reason) };
   }), [dtcLate, b2bLate, reasonEdits]);
 
   const dtcSheetOrders = useMemo(() => allLateOrders.filter((order) => order.dashboardType === "DTC").sort(shippedDateNewestFirst), [allLateOrders]);
   const b2bSheetOrders = useMemo(() => allLateOrders.filter((order) => order.dashboardType === "B2B").sort(shippedDateNewestFirst), [allLateOrders]);
-  const visibleLateOrders = view === "B2B" ? b2bSheetOrders : dtcSheetOrders;
+  const dtcActualLateOrders = useMemo(() => dtcSheetOrders.filter((order) => !order.confirmedNotLate), [dtcSheetOrders]);
+  const b2bActualLateOrders = useMemo(() => b2bSheetOrders.filter((order) => !order.confirmedNotLate), [b2bSheetOrders]);
+  const visibleLateOrders = view === "B2B" ? b2bActualLateOrders : dtcActualLateOrders;
   const activeLateSheetOrders = lateSheet === "DTC" ? dtcSheetOrders : b2bSheetOrders;
-  const openLateOrderCount = activeLateSheetOrders.filter((order) => !order.reason.trim()).length;
+  const activeActualLateOrders = activeLateSheetOrders.filter((order) => !order.confirmedNotLate);
+  const openLateOrderCount = activeActualLateOrders.filter((order) => !order.reason.trim()).length;
   const filteredLateSheetOrders = useMemo(() => {
     if (!unfilledOnly) return activeLateSheetOrders;
-    return activeLateSheetOrders.filter((order) => !order.reason.trim() || dirtyReasonKeys.has(orderKey(order.dashboardType, order.orderNumber)));
+    return activeLateSheetOrders.filter((order) =>
+      (!order.confirmedNotLate && !order.reason.trim()) || dirtyReasonKeys.has(orderKey(order.dashboardType, order.orderNumber)));
   }, [activeLateSheetOrders, dirtyReasonKeys, unfilledOnly]);
-  const summaryOrders = view === "B2B" ? b2bSheetOrders : dtcSheetOrders;
+  const summaryOrders = view === "B2B" ? b2bActualLateOrders : dtcActualLateOrders;
+  const accountabilityOrders = summaryOrders.filter((order) => order.reason.trim());
+  const jsFaultOrders = accountabilityOrders.filter((order) => order.jsFault);
+  const outsideControlOrders = accountabilityOrders.filter((order) => !order.jsFault);
+  const accountabilityRate = accountabilityOrders.length ? jsFaultOrders.length / accountabilityOrders.length : null;
+  const accountabilityData = [
+    { name: "JS Accountable", value: jsFaultOrders.length, color: "#bd4c3f" },
+    { name: "Outside JS Control", value: outsideControlOrders.length, color: "#2f8b7b" },
+  ];
+  const activeSection = view === "B2B" ? dashboard.b2b : dashboard.dtc;
+  const selectedRange = reportDateRange(dashboard.meta.reportLabel);
+  const currentSheetOrders = view === "B2B" ? b2bSheetOrders : dtcSheetOrders;
+  const confirmedNotLateThisWeek = selectedRange
+    ? currentSheetOrders.filter((order) => order.confirmedNotLate && order.shippedDate >= selectedRange.start && order.shippedDate <= selectedRange.end).length
+    : 0;
+  const adjustedLateOrders = Math.max(0, activeSection.kpis.lateOrders - confirmedNotLateThisWeek);
+  const adjustedOnTimeRate = activeSection.kpis.reportWeekOrders
+    ? (activeSection.kpis.reportWeekOrders - adjustedLateOrders) / activeSection.kpis.reportWeekOrders
+    : activeSection.kpis.onTimeRate;
+  const adjustedPerformance = activeSection.performance.map((row) => {
+    const confirmedForEntity = selectedRange
+      ? currentSheetOrders.filter((order) =>
+        order.confirmedNotLate && order.name === row.name &&
+        order.shippedDate >= selectedRange.start && order.shippedDate <= selectedRange.end).length
+      : 0;
+    if (!confirmedForEntity || row.lateOrders == null) return row;
+    const lateOrders = Math.max(0, row.lateOrders - confirmedForEntity);
+    return {
+      ...row,
+      lateOrders,
+      onTimeRate: row.shippedOrders ? (row.shippedOrders - lateOrders) / row.shippedOrders : row.onTimeRate,
+    };
+  });
+  const dirtyActiveCount = activeLateSheetOrders.filter((order) => dirtyReasonKeys.has(orderKey(order.dashboardType, order.orderNumber))).length;
 
   const reasonSummary = useMemo(() => LATE_REASON_OPTIONS.map((reason) => ({
     label: reason,
@@ -208,40 +265,57 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
     }
   }
 
-  function patchReason(order: LateOrder, field: "reason" | "remarks", value: string) {
+  function patchReason(order: LateOrder, field: "reason" | "remarks" | "confirmedNotLate" | "jsFault", value: string | boolean) {
     if (!canEdit) return;
     const key = orderKey(order.dashboardType, order.orderNumber);
-    setReasonEdits((current) => ({
-      ...current,
-      [key]: {
-        orderKey: key,
-        orderNumber: order.orderNumber,
-        dashboardType: order.dashboardType,
-        reason: current[key]?.reason ?? order.reason,
-        remarks: current[key]?.remarks ?? order.remarks,
-        [field]: value,
-      },
-    }));
+    setReasonEdits((current) => {
+      const existing = current[key];
+      let reason = existing?.reason ?? order.reason;
+      let remarks = existing?.remarks ?? order.remarks;
+      let confirmedNotLate = existing?.confirmedNotLate ?? order.confirmedNotLate ?? false;
+      let jsFault = existing?.jsFault ?? order.jsFault ?? defaultJsFaultForReason(reason);
+      if (field === "reason") {
+        reason = String(value);
+        jsFault = defaultJsFaultForReason(reason);
+      } else if (field === "remarks") {
+        remarks = String(value);
+      } else if (field === "confirmedNotLate") {
+        confirmedNotLate = Boolean(value);
+        jsFault = confirmedNotLate ? false : defaultJsFaultForReason(reason);
+      } else {
+        jsFault = Boolean(value);
+      }
+      return {
+        ...current,
+        [key]: {
+          ...existing,
+          orderKey: key,
+          orderNumber: order.orderNumber,
+          dashboardType: order.dashboardType,
+          reason,
+          remarks,
+          confirmedNotLate,
+          jsFault,
+        },
+      };
+    });
     setDirtyReasonKeys((current) => new Set(current).add(key));
   }
 
-  async function saveReason(order: LateOrder) {
-    if (!canEdit) return;
+  function reasonEditForOrder(order: LateOrder) {
     const key = orderKey(order.dashboardType, order.orderNumber);
-    const currentEdit = reasonEdits[key] ?? {
+    const currentEdit = reasonEdits[key];
+    const reason = currentEdit?.reason ?? order.reason;
+    const confirmedNotLate = currentEdit?.confirmedNotLate ?? order.confirmedNotLate ?? false;
+    return {
+      ...currentEdit,
       orderKey: key,
       orderNumber: order.orderNumber,
       dashboardType: order.dashboardType,
-      reason: order.reason,
-      remarks: order.remarks,
-      entityName: order.name,
-      orderDate: order.orderDate,
-      shippedDate: order.shippedDate,
-      processingDays: order.businessDays,
-      slaDays: order.slaDays ?? null,
-    };
-    const edit = {
-      ...currentEdit,
+      reason,
+      remarks: currentEdit?.remarks ?? order.remarks,
+      confirmedNotLate,
+      jsFault: confirmedNotLate ? false : currentEdit?.jsFault ?? order.jsFault ?? defaultJsFaultForReason(reason),
       entityName: order.name,
       reportKey: selectedSnapshotKey,
       reportLabel: dashboard.meta.reportLabel,
@@ -249,7 +323,13 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
       shippedDate: order.shippedDate,
       processingDays: order.businessDays,
       slaDays: order.slaDays ?? null,
-    };
+    } satisfies ReasonEdit;
+  }
+
+  async function saveReason(order: LateOrder) {
+    if (!canEdit) return;
+    const key = orderKey(order.dashboardType, order.orderNumber);
+    const edit = reasonEditForOrder(order);
     setSavingKey(key);
     setSavedKey("");
     try {
@@ -258,7 +338,9 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
         headers: { "content-type": "application/json" },
         body: JSON.stringify(edit),
       });
-      if (!response.ok) throw new Error();
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Save failed");
+      setReasonEdits((current) => ({ ...current, [key]: { ...edit, ...payload.edit } }));
       setDirtyReasonKeys((current) => {
         const next = new Set(current);
         next.delete(key);
@@ -271,6 +353,38 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
     }
   }
 
+  async function saveAllReasons() {
+    if (!canEdit || !dirtyActiveCount) return;
+    const orders = activeLateSheetOrders.filter((order) => dirtyReasonKeys.has(orderKey(order.dashboardType, order.orderNumber)));
+    const edits = orders.map(reasonEditForOrder);
+    setSavingAll(true);
+    setSavedKey("");
+    try {
+      const response = await fetch("/api/late-reasons", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ edits }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Save all failed");
+      setReasonEdits((current) => {
+        const next = { ...current };
+        for (const edit of edits) next[edit.orderKey] = edit;
+        for (const saved of payload.edits ?? []) next[saved.orderKey] = { ...next[saved.orderKey], ...saved };
+        return next;
+      });
+      setDirtyReasonKeys((current) => {
+        const next = new Set(current);
+        for (const edit of edits) next.delete(edit.orderKey);
+        return next;
+      });
+      setSavedKey("all");
+      window.setTimeout(() => setSavedKey(""), 1800);
+    } finally {
+      setSavingAll(false);
+    }
+  }
+
   async function exportLateReasonHistory() {
     setExporting(true);
     try {
@@ -280,16 +394,17 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
       const XLSX = await import("xlsx");
       const columns = [
         "Report Week", "Dashboard Type", "Store / Account", "Order Number", "Order Date", "Shipped Date",
-        "Processing / Calendar Days", "SLA Days", "Late Reason", "Remarks", "Saved By", "Saved At",
+        "Processing / Calendar Days", "SLA Days", "Late Reason", "Confirmed Not Late", "JS Fault", "Remarks", "Saved By", "Saved At",
       ];
       const rowsForExport = (rows: Array<Record<string, unknown>>) => rows.map((row) => [
         row.reportLabel, row.dashboardType, row.entityName, row.orderNumber, row.orderDate, row.shippedDate,
-        row.processingDays, row.slaDays, row.reason, row.remarks, row.updatedBy, row.savedAt,
+        row.processingDays, row.slaDays, row.reason, row.confirmedNotLate ? "Yes" : "No",
+        row.confirmedNotLate ? "Not Applicable" : row.jsFault ? "Yes" : "No", row.remarks, row.updatedBy, row.savedAt,
       ]);
       const workbook = XLSX.utils.book_new();
       const currentSheet = XLSX.utils.aoa_to_sheet([columns, ...rowsForExport(payload.current ?? [])]);
       const historySheet = XLSX.utils.aoa_to_sheet([columns, ...rowsForExport(payload.history ?? [])]);
-      const widths = [30, 14, 24, 20, 13, 13, 22, 10, 23, 34, 18, 22].map((wch) => ({ wch }));
+      const widths = [30, 14, 24, 20, 13, 13, 22, 10, 23, 20, 14, 34, 18, 22].map((wch) => ({ wch }));
       currentSheet["!cols"] = widths;
       historySheet["!cols"] = widths;
       XLSX.utils.book_append_sheet(workbook, currentSheet, "Current Reasons");
@@ -300,7 +415,6 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
     }
   }
 
-  const activeSection = view === "B2B" ? dashboard.b2b : dashboard.dtc;
   const activeLabel = view === "LATE" ? "Late Order Review" : `${view} Performance`;
   const liveData = dashboard.meta.sourceFilename && !dashboard.meta.sourceFilename.startsWith("Sample view");
 
@@ -328,7 +442,6 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
           <a href={signOutHref} aria-label="Sign out"><LogOut size={17} /></a>
         </div>
       </aside>
-
       <main>
         <header className="topbar">
           <div>
@@ -359,14 +472,15 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
           <div className="dashboard-content">
             <section className="intro-row">
               <div><p>{view === "DTC" ? "Direct-to-consumer fulfillment" : "Retail account fulfillment"}</p><h2>Weekly shipping health at a glance</h2></div>
-              <div className="health-pill"><CheckCircle2 size={16} /> {pct(activeSection.kpis.onTimeRate)} on time</div>
+              <div className="health-pill"><CheckCircle2 size={16} /> {pct(adjustedOnTimeRate)} on time</div>
             </section>
 
             <section className="metric-grid">
               <MetricCard label="Report Week Orders" value={numberFormat.format(activeSection.kpis.reportWeekOrders)} tone="blue" detail="Orders shipped this week" />
               {view === "B2B" && <MetricCard label="Report Week Units" value={numberFormat.format(activeSection.kpis.reportWeekUnits ?? 0)} tone="gold" detail="Units shipped to accounts" />}
-              <MetricCard label="On-Time Shipping Rate" value={pct(activeSection.kpis.onTimeRate)} tone="green" detail={view === "DTC" ? "Target: next business day" : "Across confirmed SLAs"} />
-              <MetricCard label="Late Orders" value={numberFormat.format(activeSection.kpis.lateOrders)} tone="red" detail="Needs review or follow-up" />
+              <MetricCard label="On-Time Shipping Rate" value={pct(adjustedOnTimeRate)} tone="green" detail={view === "DTC" ? "Target: next business day" : "Across confirmed SLAs"} />
+              <MetricCard label="Late Orders" value={numberFormat.format(adjustedLateOrders)} tone="red" detail="Excludes confirmed not late" />
+              <MetricCard label="Late Order Accountability" value={pct(accountabilityRate)} tone={accountabilityRate == null ? "gold" : accountabilityRate <= .1 ? "green" : "red"} detail={`${jsFaultOrders.length} JS accountable · ${outsideControlOrders.length} outside control`} />
               <MetricCard label="YTD Shipped Orders" value={numberFormat.format(activeSection.kpis.ytdOrders)} tone="teal" detail="Year-to-date volume" />
               {view === "DTC" && <MetricCard label="YTD On-Time Rate" value={pct(activeSection.kpis.ytdOnTimeRate)} tone="teal" detail="Year-to-date service level" />}
             </section>
@@ -437,7 +551,7 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
                 <div className="panel-title"><div><span>{view === "DTC" ? "Store" : "Account"} detail</span><h3>{view === "DTC" ? "Store performance" : "B2B account performance"}</h3></div></div>
                 <div className="table-scroll">
                   <table><thead><tr><th>{view === "DTC" ? "Store" : "Account"}</th>{view === "B2B" && <th>SLA</th>}<th>Orders</th><th>On time</th><th>Late</th></tr></thead>
-                    <tbody>{activeSection.performance.map((row) => {
+                    <tbody>{adjustedPerformance.map((row) => {
                       const slaDays = view === "B2B" ? confirmedB2bSlaDays(row.name, row.slaDays) : null;
                       return <tr key={row.name}><td><strong>{row.name}</strong></td>{view === "B2B" && <td>{slaDays == null ? <span className="pending-tag">Pending</span> : `${slaDays} days`}</td>}<td>{numberFormat.format(row.shippedOrders)}</td><td><span className={(row.onTimeRate ?? 0) >= .95 ? "rate-good" : row.onTimeRate == null ? "rate-pending" : "rate-watch"}>{pct(row.onTimeRate)}</span></td><td>{row.lateOrders ?? "—"}</td></tr>;
                     })}</tbody>
@@ -450,14 +564,37 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
               </article>
             </section>
 
+            <section className="panel accountability-panel">
+              <div className="panel-title"><div><span>{view} ownership</span><h3>Late Order Accountability - 4 Weeks</h3></div><span className="accountability-rate">{pct(accountabilityRate)} JS Accountability</span></div>
+              {accountabilityOrders.length ? (
+                <div className="accountability-content">
+                  <div className="accountability-chart">
+                    <ResponsiveContainer width="100%" height={240}>
+                      <PieChart>
+                        <Tooltip content={<ChartTooltip />} />
+                        <Pie data={accountabilityData} dataKey="value" nameKey="name" innerRadius={62} outerRadius={92} paddingAngle={3}>
+                          {accountabilityData.map((item) => <Cell key={item.name} fill={item.color} />)}
+                        </Pie>
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="accountability-center"><strong>{pct(accountabilityRate)}</strong><span>JS fault</span></div>
+                  </div>
+                  <div className="accountability-legend">
+                    {accountabilityData.map((item) => <div key={item.name}><i style={{ background: item.color }} /><span>{item.name}</span><strong>{item.value}</strong></div>)}
+                    <p>{summaryOrders.length - accountabilityOrders.length} pending classification · Confirmed Not Late orders are excluded.</p>
+                  </div>
+                </div>
+              ) : <div className="accountability-empty"><strong>Pending classification</strong><span>Add late reasons to calculate JS Accountability.</span></div>}
+            </section>
+
             <section className="panel late-preview-panel">
               <div className="panel-title"><div><span>Action queue</span><h3>{view} late orders</h3></div><button className="btn-text" onClick={() => setView("LATE")}>Open full review <ChevronRight size={15} /></button></div>
-              {visibleLateOrders.length ? <LateOrderTable canEdit={canEdit} sheetType={view as LateSheet} orders={visibleLateOrders.slice(0, 5)} edits={reasonEdits} savingKey={savingKey} savedKey={savedKey} onPatch={patchReason} onSave={saveReason} compact /> : <EmptyLateOrders canUpload={canEdit} onUpload={() => setUploadOpen(true)} />}
+              {visibleLateOrders.length ? <LateOrderTable canEdit={canEdit} sheetType={view as LateSheet} orders={visibleLateOrders.slice(0, 5)} edits={reasonEdits} savingKey={savingKey} savedKey={savedKey} savingAll={savingAll} onPatch={patchReason} onSave={saveReason} compact /> : <EmptyLateOrders canUpload={canEdit} onUpload={() => setUploadOpen(true)} />}
             </section>
           </div>
         ) : (
           <div className="dashboard-content review-content">
-            <section className="review-hero"><div><span>{canEdit ? "Collaborative workflow" : "Read-only register"}</span><h2>{canEdit ? "Complete every late-order reason" : "Review every late-order reason"}</h2><p>{canEdit ? "Work in the two Excel-style sheets below. Saved reasons flow directly into the matching dashboard summary." : "This account can review saved reasons and remarks but cannot change them."}</p></div><div className="review-stats"><div><strong>{activeLateSheetOrders.length}</strong><span>{lateSheet} late</span></div><div><strong>{activeLateSheetOrders.filter((order) => order.reason).length}</strong><span>Classified</span></div><div><strong>{openLateOrderCount}</strong><span>Open</span></div></div></section>
+            <section className="review-hero"><div><span>{canEdit ? "Collaborative workflow" : "Read-only register"}</span><h2>{canEdit ? "Complete every late-order reason" : "Review every late-order reason"}</h2><p>{canEdit ? "Classify each order, confirm false positives, and assign accountability. Saved changes flow directly into the matching dashboard." : "This account can review saved reasons, status, accountability, and remarks but cannot change them."}</p></div><div className="review-stats"><div><strong>{activeLateSheetOrders.length}</strong><span>System flagged</span></div><div><strong>{activeActualLateOrders.length}</strong><span>Actual late</span></div><div><strong>{pct(activeActualLateOrders.filter((order) => order.reason).length ? activeActualLateOrders.filter((order) => order.reason && order.jsFault).length / activeActualLateOrders.filter((order) => order.reason).length : null)}</strong><span>JS accountability</span></div><div><strong>{openLateOrderCount}</strong><span>Open</span></div></div></section>
             <section className="panel review-table-panel">
               <div className="review-table-heading">
                 <div className="panel-title"><div><span>Editable workbook</span><h3>Late order reason register</h3></div></div>
@@ -467,12 +604,13 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
                     <button type="button" role="tab" aria-selected={lateSheet === "B2B"} className={lateSheet === "B2B" ? "active" : ""} onClick={() => setLateSheet("B2B")}>B2B Late Orders <span>{b2bSheetOrders.length}</span></button>
                   </div>
                   <button type="button" className={`filter-button ${unfilledOnly ? "active" : ""}`} aria-pressed={unfilledOnly} onClick={() => setUnfilledOnly((current) => !current)}><ListFilter size={15} /> Unfilled only <span>{openLateOrderCount}</span></button>
+                  {canEdit && <button type="button" className={`save-all-button ${savedKey === "all" ? "saved" : ""}`} onClick={() => void saveAllReasons()} disabled={savingAll || !dirtyActiveCount}>{savingAll ? <RefreshCw className="spin" size={15} /> : savedKey === "all" ? <Check size={15} /> : <Save size={15} />} {savingAll ? "Saving…" : dirtyActiveCount ? `Save All (${dirtyActiveCount})` : savedKey === "all" ? "Saved" : "All Saved"}</button>}
                   <button type="button" className="export-button" onClick={() => void exportLateReasonHistory()} disabled={exporting}><Download size={15} /> {exporting ? "Exporting…" : "Export history"}</button>
                 </div>
               </div>
-              <p className="sheet-help">{canEdit ? `Fill in Late Reason and Remarks, then save the row. The ${lateSheet} Dashboard latest summary updates immediately.` : "View-only account: Late Reason and Remarks cannot be changed."} Rows are sorted by Shipped Date, newest first.</p>
+              <p className="sheet-help">{canEdit ? `Choose the late reason, confirm whether the order is actually late, and override JS Fault when needed. Save each row or use Save All; the ${lateSheet} Dashboard updates immediately.` : "View-only account: saved reasons, status, accountability, and remarks cannot be changed."} Out of Stock, Pre-Order, Address Issue, and Customer Request default to Not JS Fault. Rows are sorted by Shipped Date, newest first.</p>
               <div role="tabpanel" aria-label={`${lateSheet} Late Orders`}>
-                {filteredLateSheetOrders.length ? <LateOrderTable canEdit={canEdit} sheetType={lateSheet} orders={filteredLateSheetOrders} edits={reasonEdits} savingKey={savingKey} savedKey={savedKey} onPatch={patchReason} onSave={saveReason} /> : activeLateSheetOrders.length && unfilledOnly ? <div className="filtered-empty"><CheckCircle2 size={24} /><strong>All late reasons are filled</strong><span>Turn off “Unfilled only” to review every order.</span></div> : <EmptyLateOrders canUpload={canEdit} onUpload={() => setUploadOpen(true)} />}
+                {filteredLateSheetOrders.length ? <LateOrderTable canEdit={canEdit} sheetType={lateSheet} orders={filteredLateSheetOrders} edits={reasonEdits} savingKey={savingKey} savedKey={savedKey} savingAll={savingAll} onPatch={patchReason} onSave={saveReason} /> : activeLateSheetOrders.length && unfilledOnly ? <div className="filtered-empty"><CheckCircle2 size={24} /><strong>All late reasons are filled</strong><span>Turn off “Unfilled only” to review every order.</span></div> : <EmptyLateOrders canUpload={canEdit} onUpload={() => setUploadOpen(true)} />}
               </div>
             </section>
           </div>
@@ -500,15 +638,40 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
   );
 }
 
-function LateOrderTable({ canEdit, sheetType, orders, edits, savingKey, savedKey, onPatch, onSave, compact = false }: { canEdit: boolean; sheetType: LateSheet; orders: LateOrder[]; edits: Record<string, ReasonEdit>; savingKey: string; savedKey: string; onPatch: (order: LateOrder, field: "reason" | "remarks", value: string) => void; onSave: (order: LateOrder) => void; compact?: boolean }) {
+function LateOrderTable({ canEdit, sheetType, orders, edits, savingKey, savedKey, savingAll, onPatch, onSave, compact = false }: {
+  canEdit: boolean;
+  sheetType: LateSheet;
+  orders: LateOrder[];
+  edits: Record<string, ReasonEdit>;
+  savingKey: string;
+  savedKey: string;
+  savingAll: boolean;
+  onPatch: (order: LateOrder, field: "reason" | "remarks" | "confirmedNotLate" | "jsFault", value: string | boolean) => void;
+  onSave: (order: LateOrder) => void;
+  compact?: boolean;
+}) {
   return (
-    <div className="table-scroll late-table-wrap"><table className={`late-table late-table-${sheetType.toLowerCase()}`}><thead><tr><th>{sheetType === "DTC" ? "Store Name" : "Account"}</th><th>Order Number</th><th>Order Date</th><th>Shipped Date</th><th>{sheetType === "DTC" ? "Processing Days" : "Calendar Days"}</th>{sheetType === "DTC" ? <th>Shipping Time Group</th> : <><th>SLA Days</th><th>Days Over SLA</th></>}<th>Late Reason</th><th>Remarks</th>{canEdit && <th />}</tr></thead><tbody>{orders.map((order) => {
+    <div className="table-scroll late-table-wrap"><table className={`late-table late-table-${sheetType.toLowerCase()}`}><thead><tr><th>{sheetType === "DTC" ? "Store Name" : "Account"}</th><th>Order Number</th><th>Order Date</th><th>Shipped Date</th><th>{sheetType === "DTC" ? "Processing Days" : "Calendar Days"}</th>{sheetType === "DTC" ? <th>Shipping Time Group</th> : <><th>SLA Days</th><th>Days Over SLA</th></>}<th>Late Reason</th><th>Actual Status</th><th>Accountability</th><th>Remarks</th>{canEdit && <th />}</tr></thead><tbody>{orders.map((order) => {
       const key = orderKey(order.dashboardType, order.orderNumber);
       const edit = edits[key];
       const reason = edit?.reason ?? order.reason;
       const remarks = edit?.remarks ?? order.remarks;
+      const confirmedNotLate = edit?.confirmedNotLate ?? order.confirmedNotLate ?? false;
+      const jsFault = confirmedNotLate ? false : edit?.jsFault ?? order.jsFault ?? defaultJsFaultForReason(reason);
       const slaDays = sheetType === "B2B" ? confirmedB2bSlaDays(order.name, order.slaDays) : null;
-      return <tr key={key}><td className="entity-cell"><strong>{order.name}</strong></td><td><code>{order.orderNumber}</code></td><td>{formatDate(order.orderDate)}</td><td>{formatDate(order.shippedDate)}</td><td><span className="delay-badge">{order.businessDays} days</span></td>{sheetType === "DTC" ? <td>{order.group}</td> : <><td>{slaDays == null ? "—" : `${slaDays} days`}</td><td>{order.group}</td></>}<td>{canEdit ? <select aria-label={`Late reason for ${order.orderNumber}`} value={reason} onChange={(event) => onPatch(order, "reason", event.target.value)}><option value="">Select reason</option>{LATE_REASON_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select> : <span className="read-only-cell">{reason || "Not classified"}</span>}</td><td>{canEdit ? <input aria-label={`Remarks for ${order.orderNumber}`} value={remarks} placeholder={compact ? "Add note" : "Add context for the team"} onChange={(event) => onPatch(order, "remarks", event.target.value)} /> : <span className="read-only-cell">{remarks || "—"}</span>}</td>{canEdit && <td><button className={`save-row ${savedKey === key ? "saved" : ""}`} aria-label={`Save ${order.orderNumber}`} onClick={() => void onSave(order)} disabled={savingKey === key}>{savingKey === key ? <RefreshCw className="spin" size={16} /> : savedKey === key ? <Check size={16} /> : <Save size={16} />}</button></td>}</tr>;
+      return <tr key={key} className={confirmedNotLate ? "confirmed-not-late-row" : ""}>
+        <td className="entity-cell"><strong>{order.name}</strong></td>
+        <td><code>{order.orderNumber}</code></td>
+        <td>{formatDate(order.orderDate)}</td>
+        <td>{formatDate(order.shippedDate)}</td>
+        <td><span className="delay-badge">{order.businessDays} days</span></td>
+        {sheetType === "DTC" ? <td>{order.group}</td> : <><td>{slaDays == null ? "—" : `${slaDays} days`}</td><td>{order.group}</td></>}
+        <td>{canEdit ? <select aria-label={`Late reason for ${order.orderNumber}`} value={reason} onChange={(event) => onPatch(order, "reason", event.target.value)}><option value="">Select reason</option>{LATE_REASON_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select> : <span className="read-only-cell">{reason || "Not classified"}</span>}</td>
+        <td>{canEdit ? <button type="button" className={`status-toggle ${confirmedNotLate ? "not-late" : "late"}`} aria-pressed={confirmedNotLate} onClick={() => onPatch(order, "confirmedNotLate", !confirmedNotLate)}>{confirmedNotLate ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}{confirmedNotLate ? "Confirmed Not Late" : "System Late"}</button> : <span className={`status-tag ${confirmedNotLate ? "not-late" : "late"}`}>{confirmedNotLate ? "Confirmed Not Late" : "System Late"}</span>}</td>
+        <td>{canEdit ? <button type="button" className={`fault-toggle ${confirmedNotLate ? "not-applicable" : jsFault ? "js-fault" : "not-js-fault"}`} aria-pressed={!confirmedNotLate && jsFault} disabled={confirmedNotLate} onClick={() => onPatch(order, "jsFault", !jsFault)}>{confirmedNotLate ? "Not Applicable" : jsFault ? "JS Fault" : "Not JS Fault"}</button> : <span className={`fault-tag ${confirmedNotLate ? "not-applicable" : jsFault ? "js-fault" : "not-js-fault"}`}>{confirmedNotLate ? "Not Applicable" : jsFault ? "JS Fault" : "Not JS Fault"}</span>}</td>
+        <td>{canEdit ? <input aria-label={`Remarks for ${order.orderNumber}`} value={remarks} placeholder={compact ? "Add note" : "Add context for the team"} onChange={(event) => onPatch(order, "remarks", event.target.value)} /> : <span className="read-only-cell">{remarks || "—"}</span>}</td>
+        {canEdit && <td><button className={`save-row ${savedKey === key ? "saved" : ""}`} aria-label={`Save ${order.orderNumber}`} onClick={() => void onSave(order)} disabled={savingKey === key || savingAll}>{savingKey === key ? <RefreshCw className="spin" size={16} /> : savedKey === key ? <Check size={16} /> : <Save size={16} />}</button></td>}
+      </tr>;
     })}</tbody></table></div>
   );
 }

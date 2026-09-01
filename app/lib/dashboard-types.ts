@@ -9,6 +9,17 @@ export const LATE_REASON_OPTIONS = [
   "Other",
 ] as const;
 
+const NON_JS_FAULT_REASONS = new Set([
+  "out of stock",
+  "pre-order",
+  "address issue",
+  "customer request",
+]);
+
+export function defaultJsFaultForReason(reason: string) {
+  return !NON_JS_FAULT_REASONS.has(reason.trim().toLowerCase());
+}
+
 export const CONFIRMED_B2B_SLA_DAYS: Record<string, number> = {
   amazon: 7,
   rei: 7,
@@ -64,6 +75,8 @@ export type LateOrder = {
   group: string;
   reason: string;
   remarks: string;
+  confirmedNotLate?: boolean;
+  jsFault?: boolean;
 };
 
 export type DashboardSection = {
@@ -107,6 +120,8 @@ export type ReasonEdit = {
   dashboardType: "DTC" | "B2B";
   reason: string;
   remarks: string;
+  confirmedNotLate: boolean;
+  jsFault: boolean;
   reportKey?: string;
   reportLabel?: string;
   entityName?: string;

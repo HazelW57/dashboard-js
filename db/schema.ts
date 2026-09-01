@@ -36,6 +36,8 @@ export const lateReasons = sqliteTable("late_reasons", {
   dashboardType: text("dashboard_type").notNull(),
   reason: text("reason").notNull().default(""),
   remarks: text("remarks").notNull().default(""),
+  confirmedNotLate: integer("confirmed_not_late", { mode: "boolean" }).notNull().default(false),
+  jsFault: integer("js_fault", { mode: "boolean" }).notNull().default(true),
   updatedBy: text("updated_by").notNull(),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
@@ -55,6 +57,8 @@ export const lateReasonHistory = sqliteTable("late_reason_history", {
   slaDays: integer("sla_days"),
   reason: text("reason").notNull().default(""),
   remarks: text("remarks").notNull().default(""),
+  confirmedNotLate: integer("confirmed_not_late", { mode: "boolean" }).notNull().default(false),
+  jsFault: integer("js_fault", { mode: "boolean" }).notNull().default(true),
   updatedBy: text("updated_by").notNull(),
   savedAt: text("saved_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 }, (table) => [

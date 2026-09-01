@@ -36,6 +36,13 @@
       "when": 1786837016214,
       "tag": "0004_chilly_squadron_supreme",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1788218245491,
+      "tag": "0005_bent_cobalt_man",
+      "breakpoints": true
     }
   ]
 }

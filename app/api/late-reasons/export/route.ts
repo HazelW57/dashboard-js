@@ -9,6 +9,8 @@ type CurrentRow = {
   dashboard_type: "DTC" | "B2B";
   reason: string;
   remarks: string;
+  confirmed_not_late: number;
+  js_fault: number;
   updated_by: string;
   updated_at: string;
 };
@@ -45,10 +47,11 @@ export async function GET() {
   await initializeStorage(DB);
   const [currentResult, historyResult, dashboardRow] = await Promise.all([
     DB.prepare(`SELECT order_key, order_number, dashboard_type, reason, remarks,
+      confirmed_not_late, js_fault,
       updated_by, updated_at FROM late_reasons ORDER BY updated_at DESC`).all<CurrentRow>(),
     DB.prepare(`SELECT id, event_key, order_key, order_number, dashboard_type,
       report_key, report_label, entity_name, order_date, shipped_date, processing_days, sla_days,
-      reason, remarks, updated_by, saved_at
+      reason, remarks, confirmed_not_late, js_fault, updated_by, saved_at
       FROM late_reason_history ORDER BY saved_at DESC, id DESC`).all<HistoryRow>(),
     DB.prepare("SELECT dashboard_json FROM dashboard_state WHERE id = 1").first<DashboardRow>(),
   ]);
@@ -75,6 +78,8 @@ export async function GET() {
       slaDays: history?.sla_days ?? order?.slaDays ?? null,
       reason: row.reason,
       remarks: row.remarks,
+      confirmedNotLate: Boolean(row.confirmed_not_late),
+      jsFault: Boolean(row.js_fault),
       updatedBy: row.updated_by,
       savedAt: "saved_at" in row ? row.saved_at : row.updated_at,
     };
