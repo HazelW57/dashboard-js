@@ -66,7 +66,7 @@ export async function GET() {
   const withDetail = (row: CurrentRow | HistoryRow) => {
     const order = details.get(row.order_key);
     const history = "entity_name" in row ? row : null;
-    return {
+    const detail = {
       dashboardType: row.dashboard_type,
       reportKey: history?.report_key || "",
       reportLabel: history?.report_label || "",
@@ -79,10 +79,10 @@ export async function GET() {
       reason: row.reason,
       remarks: row.remarks,
       confirmedNotLate: Boolean(row.confirmed_not_late),
-      jsFault: Boolean(row.js_fault),
       updatedBy: row.updated_by,
       savedAt: "saved_at" in row ? row.saved_at : row.updated_at,
     };
+    return user.role === "editor" ? { ...detail, jsFault: Boolean(row.js_fault) } : detail;
   };
 
   return NextResponse.json({

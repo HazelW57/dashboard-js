@@ -394,17 +394,19 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
       const XLSX = await import("xlsx");
       const columns = [
         "Report Week", "Dashboard Type", "Store / Account", "Order Number", "Order Date", "Shipped Date",
-        "Processing / Calendar Days", "SLA Days", "Late Reason", "Confirmed Not Late", "JS Fault", "Remarks", "Saved By", "Saved At",
+        "Processing / Calendar Days", "SLA Days", "Late Reason", "Confirmed Not Late",
+        ...(canEdit ? ["JS Fault"] : []), "Remarks", "Saved By", "Saved At",
       ];
       const rowsForExport = (rows: Array<Record<string, unknown>>) => rows.map((row) => [
         row.reportLabel, row.dashboardType, row.entityName, row.orderNumber, row.orderDate, row.shippedDate,
         row.processingDays, row.slaDays, row.reason, row.confirmedNotLate ? "Yes" : "No",
-        row.confirmedNotLate ? "Not Applicable" : row.jsFault ? "Yes" : "No", row.remarks, row.updatedBy, row.savedAt,
+        ...(canEdit ? [row.confirmedNotLate ? "Not Applicable" : row.jsFault ? "Yes" : "No"] : []),
+        row.remarks, row.updatedBy, row.savedAt,
       ]);
       const workbook = XLSX.utils.book_new();
       const currentSheet = XLSX.utils.aoa_to_sheet([columns, ...rowsForExport(payload.current ?? [])]);
       const historySheet = XLSX.utils.aoa_to_sheet([columns, ...rowsForExport(payload.history ?? [])]);
-      const widths = [30, 14, 24, 20, 13, 13, 22, 10, 23, 20, 14, 34, 18, 22].map((wch) => ({ wch }));
+      const widths = [30, 14, 24, 20, 13, 13, 22, 10, 23, 20, ...(canEdit ? [14] : []), 34, 18, 22].map((wch) => ({ wch }));
       currentSheet["!cols"] = widths;
       historySheet["!cols"] = widths;
       XLSX.utils.book_append_sheet(workbook, currentSheet, "Current Reasons");
@@ -480,7 +482,7 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
               {view === "B2B" && <MetricCard label="Report Week Units" value={numberFormat.format(activeSection.kpis.reportWeekUnits ?? 0)} tone="gold" detail="Units shipped to accounts" />}
               <MetricCard label="On-Time Shipping Rate" value={pct(adjustedOnTimeRate)} tone="green" detail={view === "DTC" ? "Target: next business day" : "Across confirmed SLAs"} />
               <MetricCard label="Late Orders" value={numberFormat.format(adjustedLateOrders)} tone="red" detail="Excludes confirmed not late" />
-              <MetricCard label="Late Order Accountability" value={pct(accountabilityRate)} tone={accountabilityRate == null ? "gold" : accountabilityRate <= .1 ? "green" : "red"} detail={`${jsFaultOrders.length} JS accountable · ${outsideControlOrders.length} outside control`} />
+              {canEdit && <MetricCard label="Late Order Accountability" value={pct(accountabilityRate)} tone={accountabilityRate == null ? "gold" : accountabilityRate <= .1 ? "green" : "red"} detail={`${jsFaultOrders.length} JS accountable · ${outsideControlOrders.length} outside control`} />}
               <MetricCard label="YTD Shipped Orders" value={numberFormat.format(activeSection.kpis.ytdOrders)} tone="teal" detail="Year-to-date volume" />
               {view === "DTC" && <MetricCard label="YTD On-Time Rate" value={pct(activeSection.kpis.ytdOnTimeRate)} tone="teal" detail="Year-to-date service level" />}
             </section>
@@ -564,7 +566,7 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
               </article>
             </section>
 
-            <section className="panel accountability-panel">
+            {canEdit && <section className="panel accountability-panel">
               <div className="panel-title"><div><span>{view} ownership</span><h3>Late Order Accountability - 4 Weeks</h3></div><span className="accountability-rate">{pct(accountabilityRate)} JS Accountability</span></div>
               {accountabilityOrders.length ? (
                 <div className="accountability-content">
@@ -585,7 +587,7 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
                   </div>
                 </div>
               ) : <div className="accountability-empty"><strong>Pending classification</strong><span>Add late reasons to calculate JS Accountability.</span></div>}
-            </section>
+            </section>}
 
             <section className="panel late-preview-panel">
               <div className="panel-title"><div><span>Action queue</span><h3>{view} late orders</h3></div><button className="btn-text" onClick={() => setView("LATE")}>Open full review <ChevronRight size={15} /></button></div>
@@ -594,7 +596,7 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
           </div>
         ) : (
           <div className="dashboard-content review-content">
-            <section className="review-hero"><div><span>{canEdit ? "Collaborative workflow" : "Read-only register"}</span><h2>{canEdit ? "Complete every late-order reason" : "Review every late-order reason"}</h2><p>{canEdit ? "Classify each order, confirm false positives, and assign accountability. Saved changes flow directly into the matching dashboard." : "This account can review saved reasons, status, accountability, and remarks but cannot change them."}</p></div><div className="review-stats"><div><strong>{activeLateSheetOrders.length}</strong><span>System flagged</span></div><div><strong>{activeActualLateOrders.length}</strong><span>Actual late</span></div><div><strong>{pct(activeActualLateOrders.filter((order) => order.reason).length ? activeActualLateOrders.filter((order) => order.reason && order.jsFault).length / activeActualLateOrders.filter((order) => order.reason).length : null)}</strong><span>JS accountability</span></div><div><strong>{openLateOrderCount}</strong><span>Open</span></div></div></section>
+            <section className="review-hero"><div><span>{canEdit ? "Collaborative workflow" : "Read-only register"}</span><h2>{canEdit ? "Complete every late-order reason" : "Review every late-order reason"}</h2><p>{canEdit ? "Classify each order, confirm false positives, and assign accountability. Saved changes flow directly into the matching dashboard." : "This account can review saved reasons, order status, and remarks but cannot change them."}</p></div><div className="review-stats"><div><strong>{activeLateSheetOrders.length}</strong><span>System flagged</span></div><div><strong>{activeActualLateOrders.length}</strong><span>Actual late</span></div>{canEdit ? <div><strong>{pct(activeActualLateOrders.filter((order) => order.reason).length ? activeActualLateOrders.filter((order) => order.reason && order.jsFault).length / activeActualLateOrders.filter((order) => order.reason).length : null)}</strong><span>JS accountability</span></div> : <div><strong>{activeActualLateOrders.filter((order) => order.reason).length}</strong><span>Classified</span></div>}<div><strong>{openLateOrderCount}</strong><span>Open</span></div></div></section>
             <section className="panel review-table-panel">
               <div className="review-table-heading">
                 <div className="panel-title"><div><span>Editable workbook</span><h3>Late order reason register</h3></div></div>
@@ -608,7 +610,7 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
                   <button type="button" className="export-button" onClick={() => void exportLateReasonHistory()} disabled={exporting}><Download size={15} /> {exporting ? "Exporting…" : "Export history"}</button>
                 </div>
               </div>
-              <p className="sheet-help">{canEdit ? `Choose the late reason, confirm whether the order is actually late, and override JS Fault when needed. Save each row or use Save All; the ${lateSheet} Dashboard updates immediately.` : "View-only account: saved reasons, status, accountability, and remarks cannot be changed."} Out of Stock, Pre-Order, Address Issue, and Customer Request default to Not JS Fault. Rows are sorted by Shipped Date, newest first.</p>
+              <p className="sheet-help">{canEdit ? `Choose the late reason, confirm whether the order is actually late, and override JS Fault when needed. Save each row or use Save All; the ${lateSheet} Dashboard updates immediately. Out of Stock, Pre-Order, Address Issue, and Customer Request default to Not JS Fault.` : "View-only account: saved reasons, status, and remarks cannot be changed."} Rows are sorted by Shipped Date, newest first.</p>
               <div role="tabpanel" aria-label={`${lateSheet} Late Orders`}>
                 {filteredLateSheetOrders.length ? <LateOrderTable canEdit={canEdit} sheetType={lateSheet} orders={filteredLateSheetOrders} edits={reasonEdits} savingKey={savingKey} savedKey={savedKey} savingAll={savingAll} onPatch={patchReason} onSave={saveReason} /> : activeLateSheetOrders.length && unfilledOnly ? <div className="filtered-empty"><CheckCircle2 size={24} /><strong>All late reasons are filled</strong><span>Turn off “Unfilled only” to review every order.</span></div> : <EmptyLateOrders canUpload={canEdit} onUpload={() => setUploadOpen(true)} />}
               </div>
@@ -651,7 +653,7 @@ function LateOrderTable({ canEdit, sheetType, orders, edits, savingKey, savedKey
   compact?: boolean;
 }) {
   return (
-    <div className="table-scroll late-table-wrap"><table className={`late-table late-table-${sheetType.toLowerCase()}`}><thead><tr><th>{sheetType === "DTC" ? "Store Name" : "Account"}</th><th>Order Number</th><th>Order Date</th><th>Shipped Date</th><th>{sheetType === "DTC" ? "Processing Days" : "Calendar Days"}</th>{sheetType === "DTC" ? <th>Shipping Time Group</th> : <><th>SLA Days</th><th>Days Over SLA</th></>}<th>Late Reason</th><th>Actual Status</th><th>Accountability</th><th>Remarks</th>{canEdit && <th />}</tr></thead><tbody>{orders.map((order) => {
+    <div className="table-scroll late-table-wrap"><table className={`late-table late-table-${sheetType.toLowerCase()} ${canEdit ? "late-table-editor" : "late-table-viewer"}`}><thead><tr><th>{sheetType === "DTC" ? "Store Name" : "Account"}</th><th>Order Number</th><th>Order Date</th><th>Shipped Date</th><th>{sheetType === "DTC" ? "Processing Days" : "Calendar Days"}</th>{sheetType === "DTC" ? <th>Shipping Time Group</th> : <><th>SLA Days</th><th>Days Over SLA</th></>}<th>Late Reason</th><th>Actual Status</th>{canEdit && <th>Accountability</th>}<th>Remarks</th>{canEdit && <th />}</tr></thead><tbody>{orders.map((order) => {
       const key = orderKey(order.dashboardType, order.orderNumber);
       const edit = edits[key];
       const reason = edit?.reason ?? order.reason;
@@ -668,7 +670,7 @@ function LateOrderTable({ canEdit, sheetType, orders, edits, savingKey, savedKey
         {sheetType === "DTC" ? <td>{order.group}</td> : <><td>{slaDays == null ? "—" : `${slaDays} days`}</td><td>{order.group}</td></>}
         <td>{canEdit ? <select aria-label={`Late reason for ${order.orderNumber}`} value={reason} onChange={(event) => onPatch(order, "reason", event.target.value)}><option value="">Select reason</option>{LATE_REASON_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}</select> : <span className="read-only-cell">{reason || "Not classified"}</span>}</td>
         <td>{canEdit ? <button type="button" className={`status-toggle ${confirmedNotLate ? "not-late" : "late"}`} aria-pressed={confirmedNotLate} onClick={() => onPatch(order, "confirmedNotLate", !confirmedNotLate)}>{confirmedNotLate ? <CheckCircle2 size={14} /> : <AlertTriangle size={14} />}{confirmedNotLate ? "Confirmed Not Late" : "System Late"}</button> : <span className={`status-tag ${confirmedNotLate ? "not-late" : "late"}`}>{confirmedNotLate ? "Confirmed Not Late" : "System Late"}</span>}</td>
-        <td>{canEdit ? <button type="button" className={`fault-toggle ${confirmedNotLate ? "not-applicable" : jsFault ? "js-fault" : "not-js-fault"}`} aria-pressed={!confirmedNotLate && jsFault} disabled={confirmedNotLate} onClick={() => onPatch(order, "jsFault", !jsFault)}>{confirmedNotLate ? "Not Applicable" : jsFault ? "JS Fault" : "Not JS Fault"}</button> : <span className={`fault-tag ${confirmedNotLate ? "not-applicable" : jsFault ? "js-fault" : "not-js-fault"}`}>{confirmedNotLate ? "Not Applicable" : jsFault ? "JS Fault" : "Not JS Fault"}</span>}</td>
+        {canEdit && <td><button type="button" className={`fault-toggle ${confirmedNotLate ? "not-applicable" : jsFault ? "js-fault" : "not-js-fault"}`} aria-pressed={!confirmedNotLate && jsFault} disabled={confirmedNotLate} onClick={() => onPatch(order, "jsFault", !jsFault)}>{confirmedNotLate ? "Not Applicable" : jsFault ? "JS Fault" : "Not JS Fault"}</button></td>}
         <td>{canEdit ? <input aria-label={`Remarks for ${order.orderNumber}`} value={remarks} placeholder={compact ? "Add note" : "Add context for the team"} onChange={(event) => onPatch(order, "remarks", event.target.value)} /> : <span className="read-only-cell">{remarks || "—"}</span>}</td>
         {canEdit && <td><button className={`save-row ${savedKey === key ? "saved" : ""}`} aria-label={`Save ${order.orderNumber}`} onClick={() => void onSave(order)} disabled={savingKey === key || savingAll}>{savingKey === key ? <RefreshCw className="spin" size={16} /> : savedKey === key ? <Check size={16} /> : <Save size={16} />}</button></td>}
       </tr>;

@@ -168,6 +168,8 @@ td strong { color: var(--ink-soft); font-weight: 620; }
 .late-table { min-width: 1510px; }
 .late-table td { padding-top: 9px; padding-bottom: 9px; }
 .late-table-b2b { min-width: 1600px; }
+.late-table-viewer.late-table-dtc { min-width: 1260px; }
+.late-table-viewer.late-table-b2b { min-width: 1360px; }
 .entity-cell strong { display: block; }
 .late-table code { color: #304f5e; font-family: var(--font-geist-mono), monospace; font-size: 9px; }
 .type-badge { display: inline-flex; padding: 4px 6px; border-radius: 5px; font-size: 8px; font-weight: 800; }

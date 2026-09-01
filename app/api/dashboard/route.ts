@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import type { DashboardData, DashboardSnapshotSummary, ReasonEdit } from "../../lib/dashboard-types";
+import type { DashboardData, DashboardSnapshotSummary } from "../../lib/dashboard-types";
 import { getApiUser, getBindings, initializeStorage } from "../../lib/server-storage";
 
 export const runtime = "nodejs";
@@ -71,14 +71,14 @@ export async function GET(request: Request) {
       FROM late_reasons ORDER BY updated_at DESC`,
   ).all<ReasonRow>();
 
-  const reasonEdits: ReasonEdit[] = (reasons.results ?? []).map((row: ReasonRow) => ({
+  const reasonEdits = (reasons.results ?? []).map((row: ReasonRow) => ({
     orderKey: row.order_key,
     orderNumber: row.order_number,
     dashboardType: row.dashboard_type,
     reason: row.reason,
     remarks: row.remarks,
     confirmedNotLate: Boolean(row.confirmed_not_late),
-    jsFault: Boolean(row.js_fault),
+    ...(user.role === "editor" ? { jsFault: Boolean(row.js_fault) } : {}),
     updatedBy: row.updated_by,
     updatedAt: row.updated_at,
   }));
