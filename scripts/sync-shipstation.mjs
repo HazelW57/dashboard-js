@@ -49,6 +49,11 @@ const B2B_ACCOUNTS = [
   { name: "REI", stores: ["manual orders"], buyerIncludes: "rei", slaDays: 7 },
 ];
 
+// Jiant/Zepp confirmed that the 2026 Labor Day closure must not count
+// against B2B calendar-day SLAs. Weekends and every other calendar date
+// continue to follow the existing B2B rules.
+const B2B_SLA_EXCLUDED_DATES = new Set(["2026-09-07"]);
+
 const pad = (value) => String(value).padStart(2, "0");
 const iso = (date) => `${date.getUTCFullYear()}-${pad(date.getUTCMonth() + 1)}-${pad(date.getUTCDate())}`;
 const fromIso = (value) => new Date(`${value.slice(0, 10)}T00:00:00Z`);
@@ -58,6 +63,10 @@ const addDays = (value, days) => {
   return iso(date);
 };
 const daysBetween = (start, end) => Math.max(0, Math.round((fromIso(end) - fromIso(start)) / 86_400_000));
+const b2bSlaDaysBetween = (start, end) => {
+  const excludedDays = [...B2B_SLA_EXCLUDED_DATES].filter((date) => date > start && date <= end).length;
+  return Math.max(0, daysBetween(start, end) - excludedDays);
+};
 const normalize = (value) => String(value ?? "").trim().toLowerCase().replace(/\s+/g, " ");
 const text = (value) => String(value ?? "").trim();
 
@@ -259,7 +268,7 @@ function mergeRawOrders(shipments, fulfillments, storeNames, fulfillmentDetails)
   }
   return [...grouped.values()].map((row) => {
     const classification = classify(row.rawStore, row.buyer);
-    const calendarDays = row.orderDate ? daysBetween(row.orderDate, row.shipDate) : 0;
+    const calendarDays = row.orderDate ? b2bSlaDaysBetween(row.orderDate, row.shipDate) : 0;
     const processingDays = row.orderDate ? businessDays(row.orderDate, row.shipDate) : 0;
     const target = row.orderDate ? nextBusinessDay(row.orderDate) : row.shipDate;
     const onTime = row.orderDate ? row.shipDate <= target : false;
