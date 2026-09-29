@@ -139,6 +139,12 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
   const [bulkImporting, setBulkImporting] = useState(false);
   const [bulkError, setBulkError] = useState("");
   const [bulkSuccess, setBulkSuccess] = useState("");
+  const [selectedLateOrderKeys, setSelectedLateOrderKeys] = useState<Set<string>>(() => new Set());
+  const [selectedLateReason, setSelectedLateReason] = useState("");
+  const [selectedUpdateOpen, setSelectedUpdateOpen] = useState(false);
+  const [selectedUpdateSaving, setSelectedUpdateSaving] = useState(false);
+  const [selectedUpdateError, setSelectedUpdateError] = useState("");
+  const [selectedUpdateSuccess, setSelectedUpdateSuccess] = useState("");
   const fileInput = useRef<HTMLInputElement>(null);
   const bulkFileInput = useRef<HTMLInputElement>(null);
 
@@ -175,6 +181,7 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
       for (const edit of payload.reasonEdits ?? []) edits[edit.orderKey] = edit;
       setReasonEdits(edits);
       setDirtyReasonKeys(new Set());
+      setSelectedLateOrderKeys(new Set());
     } finally {
       setLoading(false);
     }
@@ -205,6 +212,16 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
     return activeLateSheetOrders.filter((order) =>
       (!order.confirmedNotLate && !order.reason.trim()) || dirtyReasonKeys.has(orderKey(order.dashboardType, order.orderNumber)));
   }, [activeLateSheetOrders, dirtyReasonKeys, unfilledOnly]);
+  const filteredLateOrderKeys = useMemo(
+    () => filteredLateSheetOrders.map((order) => orderKey(order.dashboardType, order.orderNumber)),
+    [filteredLateSheetOrders],
+  );
+  const selectedVisibleLateOrders = useMemo(
+    () => filteredLateSheetOrders.filter((order) => selectedLateOrderKeys.has(orderKey(order.dashboardType, order.orderNumber))),
+    [filteredLateSheetOrders, selectedLateOrderKeys],
+  );
+  const allFilteredLateOrdersSelected = filteredLateOrderKeys.length > 0 && filteredLateOrderKeys.every((key) => selectedLateOrderKeys.has(key));
+
   const summaryOrders = view === "B2B" ? b2bActualLateOrders : dtcActualLateOrders;
   const accountabilityOrders = summaryOrders.filter((order) => order.reason.trim());
   const jsFaultOrders = accountabilityOrders.filter((order) => order.jsFault);
@@ -390,6 +407,74 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
       window.setTimeout(() => setSavedKey(""), 1800);
     } finally {
       setSavingAll(false);
+    }
+  }
+
+  function toggleLateOrderSelection(key: string) {
+    setSelectedUpdateSuccess("");
+    setSelectedLateOrderKeys((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function toggleAllFilteredLateOrders() {
+    setSelectedUpdateSuccess("");
+    setSelectedLateOrderKeys((current) => {
+      const next = new Set(current);
+      if (allFilteredLateOrdersSelected) {
+        for (const key of filteredLateOrderKeys) next.delete(key);
+      } else {
+        for (const key of filteredLateOrderKeys) next.add(key);
+      }
+      return next;
+    });
+  }
+
+  async function updateSelectedLateOrders() {
+    if (!canEdit || !selectedLateReason || !selectedVisibleLateOrders.length) return;
+    const orders = selectedVisibleLateOrders;
+    const edits = orders.map((order) => {
+      const edit = reasonEditForOrder(order);
+      return {
+        ...edit,
+        reason: selectedLateReason,
+        jsFault: edit.confirmedNotLate ? false : defaultJsFaultForReason(selectedLateReason),
+      } satisfies ReasonEdit;
+    });
+    setSelectedUpdateSaving(true);
+    setSelectedUpdateError("");
+    setSelectedUpdateSuccess("");
+    try {
+      const response = await fetch("/api/late-reasons", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ edits }),
+      });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Bulk update failed");
+      setReasonEdits((current) => {
+        const next = { ...current };
+        for (const edit of edits) next[edit.orderKey] = edit;
+        for (const saved of payload.edits ?? []) next[saved.orderKey] = { ...next[saved.orderKey], ...saved };
+        return next;
+      });
+      setDirtyReasonKeys((current) => {
+        const next = new Set(current);
+        for (const edit of edits) next.delete(edit.orderKey);
+        return next;
+      });
+      setSelectedLateOrderKeys(new Set());
+      setSelectedLateReason("");
+      setSelectedUpdateOpen(false);
+      setSelectedUpdateSuccess(`${edits.length} orders updated`);
+      window.setTimeout(() => setSelectedUpdateSuccess(""), 2400);
+    } catch (error) {
+      setSelectedUpdateError(error instanceof Error ? error.message : "The selected orders could not be updated");
+    } finally {
+      setSelectedUpdateSaving(false);
     }
   }
 
@@ -779,18 +864,36 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
                 <div className="panel-title"><div><span>Editable workbook</span><h3>Late order reason register</h3></div></div>
                 <div className="review-tools">
                   <div className="sheet-tabs" role="tablist" aria-label="Late order sheets">
-                    <button type="button" role="tab" aria-selected={lateSheet === "DTC"} className={lateSheet === "DTC" ? "active" : ""} onClick={() => setLateSheet("DTC")}>DTC Late Orders <span>{dtcSheetOrders.length}</span></button>
-                    <button type="button" role="tab" aria-selected={lateSheet === "B2B"} className={lateSheet === "B2B" ? "active" : ""} onClick={() => setLateSheet("B2B")}>B2B Late Orders <span>{b2bSheetOrders.length}</span></button>
+                    <button type="button" role="tab" aria-selected={lateSheet === "DTC"} className={lateSheet === "DTC" ? "active" : ""} onClick={() => { setLateSheet("DTC"); setSelectedLateOrderKeys(new Set()); }}>DTC Late Orders <span>{dtcSheetOrders.length}</span></button>
+                    <button type="button" role="tab" aria-selected={lateSheet === "B2B"} className={lateSheet === "B2B" ? "active" : ""} onClick={() => { setLateSheet("B2B"); setSelectedLateOrderKeys(new Set()); }}>B2B Late Orders <span>{b2bSheetOrders.length}</span></button>
                   </div>
-                  <button type="button" className={`filter-button ${unfilledOnly ? "active" : ""}`} aria-pressed={unfilledOnly} onClick={() => setUnfilledOnly((current) => !current)}><ListFilter size={15} /> Unfilled only <span>{openLateOrderCount}</span></button>
+                  <button type="button" className={`filter-button ${unfilledOnly ? "active" : ""}`} aria-pressed={unfilledOnly} onClick={() => { setUnfilledOnly((current) => !current); setSelectedLateOrderKeys(new Set()); }}><ListFilter size={15} /> Unfilled only <span>{openLateOrderCount}</span></button>
                   {canEdit && <button type="button" className="bulk-button" onClick={() => { setBulkError(""); setBulkSuccess(""); setBulkOpen(true); }}><FileSpreadsheet size={15} /> Bulk update <span>{allOpenLateOrders.length}</span></button>}
                   {canEdit && <button type="button" className={`save-all-button ${savedKey === "all" ? "saved" : ""}`} onClick={() => void saveAllReasons()} disabled={savingAll || !dirtyActiveCount}>{savingAll ? <RefreshCw className="spin" size={15} /> : savedKey === "all" ? <Check size={15} /> : <Save size={15} />} {savingAll ? "Saving…" : dirtyActiveCount ? `Save All (${dirtyActiveCount})` : savedKey === "all" ? "Saved" : "All Saved"}</button>}
                   <button type="button" className="export-button" onClick={() => void exportLateReasonHistory()} disabled={exporting}><Download size={15} /> {exporting ? "Exporting…" : "Export history"}</button>
                 </div>
               </div>
               <p className="sheet-help">{canEdit ? `Choose the late reason, confirm whether the order is actually late, and override Warehouse Fault when needed. Save each row or use Save All; the ${lateSheet} Dashboard updates immediately. Out of Stock, Pre-Order, Address Issue, and Customer Request default to Not Warehouse Fault.` : "View-only account: saved reasons, status, and remarks cannot be changed."} Rows are sorted by Shipped Date, newest first.</p>
+              {canEdit && filteredLateSheetOrders.length > 0 && (
+                <div className="selected-update-bar">
+                  <label className="select-visible-control">
+                    <input type="checkbox" checked={allFilteredLateOrdersSelected} onChange={toggleAllFilteredLateOrders} />
+                    <span>Select all visible</span>
+                  </label>
+                  <span className="selected-count">{selectedVisibleLateOrders.length} selected</span>
+                  <select aria-label="Late reason for selected orders" value={selectedLateReason} onChange={(event) => { setSelectedLateReason(event.target.value); setSelectedUpdateError(""); }}>
+                    <option value="">Choose reason for selected…</option>
+                    {LATE_REASON_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
+                  </select>
+                  <button type="button" className="update-selected-button" disabled={!selectedVisibleLateOrders.length || !selectedLateReason || selectedUpdateSaving} onClick={() => { setSelectedUpdateError(""); setSelectedUpdateOpen(true); }}>
+                    <Check size={15} /> Update Selected
+                  </button>
+                  {selectedUpdateSuccess && <span className="inline-success"><CheckCircle2 size={14} /> {selectedUpdateSuccess}</span>}
+                  {selectedUpdateError && !selectedUpdateOpen && <span className="inline-error"><AlertTriangle size={14} /> {selectedUpdateError}</span>}
+                </div>
+              )}
               <div role="tabpanel" aria-label={`${lateSheet} Late Orders`}>
-                {filteredLateSheetOrders.length ? <LateOrderTable canEdit={canEdit} sheetType={lateSheet} orders={filteredLateSheetOrders} edits={reasonEdits} savingKey={savingKey} savedKey={savedKey} savingAll={savingAll} onPatch={patchReason} onSave={saveReason} /> : activeLateSheetOrders.length && unfilledOnly ? <div className="filtered-empty"><CheckCircle2 size={24} /><strong>All late reasons are filled</strong><span>Turn off “Unfilled only” to review every order.</span></div> : <EmptyLateOrders canUpload={canEdit} onUpload={() => setUploadOpen(true)} />}
+                {filteredLateSheetOrders.length ? <LateOrderTable canEdit={canEdit} sheetType={lateSheet} orders={filteredLateSheetOrders} edits={reasonEdits} savingKey={savingKey} savedKey={savedKey} savingAll={savingAll || selectedUpdateSaving} selectedKeys={selectedLateOrderKeys} onToggleSelected={toggleLateOrderSelection} onPatch={patchReason} onSave={saveReason} /> : activeLateSheetOrders.length && unfilledOnly ? <div className="filtered-empty"><CheckCircle2 size={24} /><strong>All late reasons are filled</strong><span>Turn off “Unfilled only” to review every order.</span></div> : <EmptyLateOrders canUpload={canEdit} onUpload={() => setUploadOpen(true)} />}
               </div>
             </section>
           </div>
@@ -841,11 +944,29 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
           </div>
         </div>
       )}
+
+      {canEdit && selectedUpdateOpen && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="Confirm selected late reason update">
+          <div className="upload-modal selected-update-modal">
+            <button className="modal-close" onClick={() => !selectedUpdateSaving && setSelectedUpdateOpen(false)} aria-label="Close"><X size={20} /></button>
+            <div className="modal-icon"><Check size={26} /></div>
+            <span className="eyebrow">Confirm bulk update</span>
+            <h2>Update {selectedVisibleLateOrders.length} orders?</h2>
+            <p>Only the selected, currently visible {lateSheet} orders will be updated. Their late reason will be set to <strong>{selectedLateReason}</strong>.</p>
+            <div className="confirm-selection-summary"><span>Selected orders</span><strong>{selectedVisibleLateOrders.length}</strong></div>
+            {selectedUpdateError && <div className="error-message"><AlertTriangle size={16} /> {selectedUpdateError}</div>}
+            <div className="selected-update-actions">
+              <button type="button" className="btn-secondary" disabled={selectedUpdateSaving} onClick={() => setSelectedUpdateOpen(false)}>Cancel</button>
+              <button type="button" className="btn-primary" disabled={selectedUpdateSaving} onClick={() => void updateSelectedLateOrders()}>{selectedUpdateSaving ? <RefreshCw className="spin" size={16} /> : <Check size={16} />} {selectedUpdateSaving ? "Updating…" : `Update ${selectedVisibleLateOrders.length} Orders`}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
-function LateOrderTable({ canEdit, sheetType, orders, edits, savingKey, savedKey, savingAll, onPatch, onSave, compact = false }: {
+function LateOrderTable({ canEdit, sheetType, orders, edits, savingKey, savedKey, savingAll, selectedKeys, onToggleSelected, onPatch, onSave, compact = false }: {
   canEdit: boolean;
   sheetType: LateSheet;
   orders: LateOrder[];
@@ -853,12 +974,15 @@ function LateOrderTable({ canEdit, sheetType, orders, edits, savingKey, savedKey
   savingKey: string;
   savedKey: string;
   savingAll: boolean;
+  selectedKeys?: Set<string>;
+  onToggleSelected?: (key: string) => void;
   onPatch: (order: LateOrder, field: "reason" | "remarks" | "confirmedNotLate" | "jsFault", value: string | boolean) => void;
   onSave: (order: LateOrder) => void;
   compact?: boolean;
 }) {
+  const showSelection = Boolean(canEdit && !compact && selectedKeys && onToggleSelected);
   return (
-    <div className="table-scroll late-table-wrap"><table className={`late-table late-table-${sheetType.toLowerCase()} ${canEdit ? "late-table-editor" : "late-table-viewer"}`}><thead><tr><th>{sheetType === "DTC" ? "Store Name" : "Account"}</th><th>Order Number</th><th>Order Date</th><th>Shipped Date</th><th>{sheetType === "DTC" ? "Processing Days" : "Calendar Days"}</th>{sheetType === "DTC" ? <th>Shipping Time Group</th> : <><th>SLA Days</th><th>Days Over SLA</th></>}<th>Late Reason</th><th>Actual Status</th>{canEdit && <th>Accountability</th>}<th>Remarks</th>{canEdit && <th />}</tr></thead><tbody>{orders.map((order) => {
+    <div className="table-scroll late-table-wrap"><table className={`late-table late-table-${sheetType.toLowerCase()} ${canEdit ? "late-table-editor" : "late-table-viewer"}`}><thead><tr>{showSelection && <th className="selection-column"><span className="sr-only">Select</span></th>}<th>{sheetType === "DTC" ? "Store Name" : "Account"}</th><th>Order Number</th><th>Order Date</th><th>Shipped Date</th><th>{sheetType === "DTC" ? "Processing Days" : "Calendar Days"}</th>{sheetType === "DTC" ? <th>Shipping Time Group</th> : <><th>SLA Days</th><th>Days Over SLA</th></>}<th>Late Reason</th><th>Actual Status</th>{canEdit && <th>Accountability</th>}<th>Remarks</th>{canEdit && <th />}</tr></thead><tbody>{orders.map((order) => {
       const key = orderKey(order.dashboardType, order.orderNumber);
       const edit = edits[key];
       const reason = edit?.reason ?? order.reason;
@@ -866,7 +990,8 @@ function LateOrderTable({ canEdit, sheetType, orders, edits, savingKey, savedKey
       const confirmedNotLate = edit?.confirmedNotLate ?? order.confirmedNotLate ?? false;
       const jsFault = confirmedNotLate ? false : edit?.jsFault ?? order.jsFault ?? defaultJsFaultForReason(reason);
       const slaDays = sheetType === "B2B" ? confirmedB2bSlaDays(order.name, order.slaDays) : null;
-      return <tr key={key} className={confirmedNotLate ? "confirmed-not-late-row" : ""}>
+      return <tr key={key} className={`${confirmedNotLate ? "confirmed-not-late-row" : ""} ${selectedKeys?.has(key) ? "selected-order-row" : ""}`}>
+        {showSelection && <td className="selection-column"><input type="checkbox" aria-label={`Select ${order.orderNumber}`} checked={selectedKeys!.has(key)} onChange={() => onToggleSelected!(key)} /></td>}
         <td className="entity-cell"><strong>{order.name}</strong></td>
         <td><code>{order.orderNumber}</code></td>
         <td>{formatDate(order.orderDate)}</td>
