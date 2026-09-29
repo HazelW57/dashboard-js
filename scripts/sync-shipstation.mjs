@@ -45,7 +45,7 @@ const B2B_ACCOUNTS = [
   { name: "Best Buy", stores: ["best buy"], slaDays: 7 },
   { name: "Target", stores: ["target stores"], slaDays: 5 },
   { name: "Amazon", stores: ["amazon vc"], slaDays: 7 },
-  { name: "Walmart", stores: ["walmart"], slaDays: 7 },
+  { name: "Walmart", stores: ["walmart"], slaDays: 12 },
   { name: "REI", stores: ["manual orders"], buyerIncludes: "rei", slaDays: 7 },
 ];
 
