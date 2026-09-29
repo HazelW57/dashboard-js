@@ -22,6 +22,7 @@ export function defaultJsFaultForReason(reason: string) {
 
 export const CONFIRMED_B2B_SLA_DAYS: Record<string, number> = {
   amazon: 7,
+  walmart: 12,
   rei: 7,
 };
 
