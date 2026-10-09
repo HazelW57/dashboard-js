@@ -43,6 +43,13 @@
       "when": 1788218245491,
       "tag": "0005_bent_cobalt_man",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1791568830434,
+      "tag": "0006_lean_shriek",
+      "breakpoints": true
     }
   ]
 }
