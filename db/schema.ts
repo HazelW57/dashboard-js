@@ -72,3 +72,70 @@ export const loginAttempts = sqliteTable("login_attempts", {
   lockedUntil: integer("locked_until").notNull().default(0),
   updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
 });
+
+export const serialOrders = sqliteTable("serial_orders", {
+  orderKey: text("order_key").primaryKey(),
+  orderNumber: text("order_number").notNull(),
+  poNumber: text("po_number").notNull().default(""),
+  customerName: text("customer_name").notNull().default(""),
+  status: text("status").notNull().default("open"),
+  source: text("source").notNull().default("manual"),
+  orderDate: text("order_date").notNull().default(""),
+  createdBy: text("created_by").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("serial_orders_order_number_unique").on(table.orderNumber),
+  index("idx_serial_orders_updated_at").on(table.updatedAt),
+]);
+
+export const serialOrderLines = sqliteTable("serial_order_lines", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  orderKey: text("order_key").notNull(),
+  sku: text("sku").notNull(),
+  upc: text("upc").notNull().default(""),
+  description: text("description").notNull().default(""),
+  orderedQty: integer("ordered_qty").notNull().default(0),
+  casePack: integer("case_pack").notNull().default(1),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  uniqueIndex("serial_order_lines_order_sku_unique").on(table.orderKey, table.sku),
+  index("idx_serial_order_lines_upc").on(table.upc),
+]);
+
+export const serialScans = sqliteTable("serial_scans", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  scanKey: text("scan_key").notNull().unique(),
+  orderKey: text("order_key").notNull(),
+  sku: text("sku").notNull(),
+  serialNumber: text("serial_number"),
+  cartonNumber: text("carton_number"),
+  scanType: text("scan_type").notNull().default("serial"),
+  unitQuantity: integer("unit_quantity").notNull().default(1),
+  scannedBy: text("scanned_by").notNull(),
+  scannedAt: text("scanned_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+  voided: integer("voided", { mode: "boolean" }).notNull().default(false),
+  voidedBy: text("voided_by"),
+  voidedAt: text("voided_at"),
+}, (table) => [
+  uniqueIndex("serial_scans_order_serial_unique").on(table.orderKey, table.serialNumber),
+  uniqueIndex("serial_scans_order_carton_unique").on(table.orderKey, table.cartonNumber),
+  index("idx_serial_scans_order_sku").on(table.orderKey, table.sku),
+  index("idx_serial_scans_serial").on(table.serialNumber),
+  index("idx_serial_scans_carton").on(table.cartonNumber),
+  index("idx_serial_scans_scanned_at").on(table.scannedAt),
+]);
+
+export const serialAuditLog = sqliteTable("serial_audit_log", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  orderKey: text("order_key").notNull().default(""),
+  action: text("action").notNull(),
+  subject: text("subject").notNull().default(""),
+  detailsJson: text("details_json").notNull().default("{}"),
+  actor: text("actor").notNull(),
+  createdAt: text("created_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, (table) => [
+  index("idx_serial_audit_order_created").on(table.orderKey, table.createdAt),
+  index("idx_serial_audit_created_at").on(table.createdAt),
+]);
