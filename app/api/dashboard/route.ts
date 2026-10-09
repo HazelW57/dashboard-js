@@ -78,7 +78,7 @@ export async function GET(request: Request) {
     reason: row.reason,
     remarks: row.remarks,
     confirmedNotLate: Boolean(row.confirmed_not_late),
-    ...(user.role === "editor" ? { jsFault: Boolean(row.js_fault) } : {}),
+    jsFault: Boolean(row.js_fault),
     updatedBy: row.updated_by,
     updatedAt: row.updated_at,
   }));
