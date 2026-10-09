@@ -2,6 +2,25 @@
 
 Internal shipping dashboard for Jiant Solutions. It keeps weekly dashboard snapshots, preserves late-reason history, and supports a view-only account plus an editor account.
 
+## Serial Capture
+
+The editor account includes a central Serial Capture workspace inside the existing dashboard. Data is stored in Cloudflare D1 rather than a browser or one warehouse computer.
+
+Included workflows:
+
+- import order/SKU lines from Excel or CSV
+- scan a UPC/SKU followed by an individual serial number
+- scan a carton once and record its unit quantity without creating synthetic serial numbers
+- block duplicate serial or carton values on the same order
+- upload serials and cartons in bulk
+- track ordered, captured, remaining, and completed quantities
+- search by serial, carton, SKU, or order
+- export one order's complete scan register
+- void a scan while preserving its audit history
+- review the central user/time/action audit log
+
+The Orders and Bulk Upload screens provide downloadable templates. The order template accepts Order Number, PO Number, Customer, Status, Order Date, SKU, UPC, Description, Ordered Qty, and Case Pack. Serial Capture is intentionally hidden from the view-only account.
+
 ## Weekly ShipStation sync
 
 The GitHub Actions workflow in `.github/workflows/weekly-shipstation-sync.yml` runs every Sunday at 10:00 UTC. It exports only shipped ShipStation V2 records, merges label-purchased shipments with fulfillments, deduplicates by order number, and builds the completed Sunday–Saturday dashboard week.
