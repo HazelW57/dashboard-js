@@ -5,6 +5,7 @@ import {
   BarChart3,
   Check,
   CheckCircle2,
+  ChevronDown,
   ChevronRight,
   Download,
   FileSpreadsheet,
@@ -14,6 +15,7 @@ import {
   PackageCheck,
   RefreshCw,
   Save,
+  ScanLine,
   ShieldCheck,
   Upload,
   Users,
@@ -48,8 +50,10 @@ import {
 } from "../lib/dashboard-types";
 import { sampleDashboard } from "../lib/sample-dashboard";
 import type { AppRole } from "../lib/app-auth";
+import type { SerialSection } from "../lib/serial-types";
+import { SerialCapture } from "./serial-capture";
 
-type View = "DTC" | "B2B" | "LATE";
+type View = "DTC" | "B2B" | "LATE" | "SERIAL";
 type LateSheet = "DTC" | "B2B";
 
 const numberFormat = new Intl.NumberFormat("en-US");
@@ -119,6 +123,8 @@ function EmptyLateOrders({ canUpload, onUpload }: { canUpload: boolean; onUpload
 export function DashboardApp({ user, signOutHref }: { user: { name: string; username: string; role: AppRole }; signOutHref: string }) {
   const canEdit = user.role === "editor";
   const [view, setView] = useState<View>("DTC");
+  const [serialSection, setSerialSection] = useState<SerialSection>("orders");
+  const [serialMenuOpen, setSerialMenuOpen] = useState(true);
   const [lateSheet, setLateSheet] = useState<LateSheet>("DTC");
   const [dashboard, setDashboard] = useState<DashboardData>(sampleDashboard);
   const [snapshots, setSnapshots] = useState<DashboardSnapshotSummary[]>([]);
@@ -141,6 +147,8 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
   const [bulkSuccess, setBulkSuccess] = useState("");
   const [selectedLateOrderKeys, setSelectedLateOrderKeys] = useState<Set<string>>(() => new Set());
   const [selectedLateReason, setSelectedLateReason] = useState("");
+  const [selectedActualStatus, setSelectedActualStatus] = useState<"" | "system-late" | "confirmed-not-late">("");
+  const [selectedAccountability, setSelectedAccountability] = useState<"" | "warehouse-fault" | "not-warehouse-fault">("");
   const [selectedUpdateOpen, setSelectedUpdateOpen] = useState(false);
   const [selectedUpdateSaving, setSelectedUpdateSaving] = useState(false);
   const [selectedUpdateError, setSelectedUpdateError] = useState("");
@@ -221,6 +229,14 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
     [filteredLateSheetOrders, selectedLateOrderKeys],
   );
   const allFilteredLateOrdersSelected = filteredLateOrderKeys.length > 0 && filteredLateOrderKeys.every((key) => selectedLateOrderKeys.has(key));
+  const hasSelectedBulkChange = Boolean(selectedLateReason || selectedActualStatus || selectedAccountability);
+  const selectedBulkChanges = [
+    selectedLateReason ? `Late Reason: ${selectedLateReason}` : "",
+    selectedActualStatus ? `Actual Status: ${selectedActualStatus === "confirmed-not-late" ? "Confirmed Not Late" : "System Late"}` : "",
+    selectedAccountability && selectedActualStatus !== "confirmed-not-late"
+      ? `Accountability: ${selectedAccountability === "warehouse-fault" ? "Warehouse Fault" : "Not Warehouse Fault"}`
+      : "",
+  ].filter(Boolean);
 
   const summaryOrders = view === "B2B" ? b2bActualLateOrders : dtcActualLateOrders;
   const accountabilityOrders = summaryOrders.filter((order) => order.reason.trim());
@@ -434,14 +450,29 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
   }
 
   async function updateSelectedLateOrders() {
-    if (!canEdit || !selectedLateReason || !selectedVisibleLateOrders.length) return;
+    if (!canEdit || !hasSelectedBulkChange || !selectedVisibleLateOrders.length) return;
     const orders = selectedVisibleLateOrders;
     const edits = orders.map((order) => {
       const edit = reasonEditForOrder(order);
+      const reason = selectedLateReason || edit.reason;
+      const confirmedNotLate = selectedActualStatus === "confirmed-not-late"
+        ? true
+        : selectedActualStatus === "system-late"
+          ? false
+          : edit.confirmedNotLate;
+      let jsFault = edit.jsFault;
+      if (confirmedNotLate) {
+        jsFault = false;
+      } else if (selectedAccountability) {
+        jsFault = selectedAccountability === "warehouse-fault";
+      } else if (selectedLateReason || (selectedActualStatus === "system-late" && edit.confirmedNotLate)) {
+        jsFault = defaultJsFaultForReason(reason);
+      }
       return {
         ...edit,
-        reason: selectedLateReason,
-        jsFault: edit.confirmedNotLate ? false : defaultJsFaultForReason(selectedLateReason),
+        reason,
+        confirmedNotLate,
+        jsFault,
       } satisfies ReasonEdit;
     });
     setSelectedUpdateSaving(true);
@@ -468,6 +499,8 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
       });
       setSelectedLateOrderKeys(new Set());
       setSelectedLateReason("");
+      setSelectedActualStatus("");
+      setSelectedAccountability("");
       setSelectedUpdateOpen(false);
       setSelectedUpdateSuccess(`${edits.length} orders updated`);
       window.setTimeout(() => setSelectedUpdateSuccess(""), 2400);
@@ -679,7 +712,7 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
     }
   }
 
-  const activeLabel = view === "LATE" ? "Late Order Review" : `${view} Performance`;
+  const activeLabel = view === "LATE" ? "Late Order Review" : view === "SERIAL" ? "Serial Capture" : `${view} Performance`;
   const liveData = dashboard.meta.sourceFilename && !dashboard.meta.sourceFilename.startsWith("Sample view");
 
   return (
@@ -693,12 +726,18 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
           <button className={view === "DTC" ? "active" : ""} onClick={() => setView("DTC")}><LayoutDashboard size={18} /><span>DTC Dashboard</span><ChevronRight size={15} /></button>
           <button className={view === "B2B" ? "active" : ""} onClick={() => setView("B2B")}><Users size={18} /><span>B2B Dashboard</span><ChevronRight size={15} /></button>
           <button className={view === "LATE" ? "active" : ""} onClick={() => setView("LATE")}><AlertTriangle size={18} /><span>Late Order Review</span><ChevronRight size={15} /></button>
+          {canEdit && <>
+            <button className={view === "SERIAL" ? "active" : ""} onClick={() => { setView("SERIAL"); setSerialMenuOpen((current) => view === "SERIAL" ? !current : true); }}><ScanLine size={18} /><span>Serial Capture</span>{serialMenuOpen && view === "SERIAL" ? <ChevronDown size={15} /> : <ChevronRight size={15} />}</button>
+            {serialMenuOpen && view === "SERIAL" && <div className="sidebar-submenu">
+              {(["orders", "scan", "bulk", "lookup", "audit"] as SerialSection[]).map((item) => <button key={item} className={serialSection === item ? "active" : ""} onClick={() => setSerialSection(item)}><i /><span>{item === "orders" ? "Orders" : item === "scan" ? "Capture" : item === "bulk" ? "Bulk Upload" : item === "lookup" ? "Serial Lookup" : "Audit Log"}</span></button>)}
+            </div>}
+          </>}
         </nav>
         {canEdit && <><div className="sidebar-section-label">Data management</div><button className="sidebar-upload" onClick={() => setUploadOpen(true)}><Upload size={18} /><span>Upload Excel</span></button></>}
         <div className="data-source-card">
-          <span className={liveData ? "status-live" : "status-sample"}>{liveData ? "Live dataset" : "Sample preview"}</span>
-          <strong>{dashboard.meta.reportLabel}</strong>
-          <small>{dashboard.meta.sourceFilename}</small>
+          <span className={view === "SERIAL" ? "status-live" : liveData ? "status-live" : "status-sample"}>{view === "SERIAL" ? "Central database" : liveData ? "Live dataset" : "Sample preview"}</span>
+          <strong>{view === "SERIAL" ? "Serial and carton history" : dashboard.meta.reportLabel}</strong>
+          <small>{view === "SERIAL" ? "Saved across computers and sessions" : dashboard.meta.sourceFilename}</small>
         </div>
         <div className="sidebar-footer">
           <div className="avatar">{user.name.slice(0, 1).toUpperCase()}</div>
@@ -709,11 +748,11 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
       <main>
         <header className="topbar">
           <div>
-            <span className="eyebrow">Shipping intelligence / {view}</span>
+            <span className="eyebrow">{view === "SERIAL" ? `Warehouse operations / ${serialSection}` : `Shipping intelligence / ${view}`}</span>
             <h1>{activeLabel}</h1>
           </div>
           <div className="topbar-actions">
-            {snapshots.length ? (
+            {view === "SERIAL" ? <span className="read-only-pill"><ShieldCheck size={14} /> Editor only</span> : snapshots.length ? (
               <label className="week-picker">
                 <span>REPORT WEEK</span>
                 <select
@@ -727,12 +766,14 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
                 </select>
               </label>
             ) : <div className="report-chip"><span>REPORT PERIOD</span><strong>{dashboard.meta.reportLabel}</strong></div>}
-            {canEdit ? <button className="btn-primary" onClick={() => setUploadOpen(true)}><Upload size={16} /> Update data</button> : <span className="read-only-pill"><ShieldCheck size={14} /> View only</span>}
+            {view !== "SERIAL" && (canEdit ? <button className="btn-primary" onClick={() => setUploadOpen(true)}><Upload size={16} /> Update data</button> : <span className="read-only-pill"><ShieldCheck size={14} /> View only</span>)}
           </div>
         </header>
 
         {loading && <div className="loading-bar"><span /></div>}
-        {view !== "LATE" ? (
+        {view === "SERIAL" ? (
+          <SerialCapture section={serialSection} onSectionChange={setSerialSection} canEdit={canEdit} />
+        ) : view !== "LATE" ? (
           <div className="dashboard-content">
             <section className="intro-row">
               <div><p>{view === "DTC" ? "Direct-to-consumer fulfillment" : "Retail account fulfillment"}</p><h2>Weekly shipping health at a glance</h2></div>
@@ -744,7 +785,7 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
               {view === "B2B" && <MetricCard label="Report Week Units" value={numberFormat.format(activeSection.kpis.reportWeekUnits ?? 0)} tone="gold" detail="Units shipped to accounts" />}
               <MetricCard label="On-Time Shipping Rate" value={pct(adjustedOnTimeRate)} tone="green" detail={view === "DTC" ? "Target: next business day" : "Across confirmed SLAs"} />
               <MetricCard label="Late Orders" value={numberFormat.format(adjustedLateOrders)} tone="red" detail="Excludes confirmed not late" />
-              {canEdit && <MetricCard label="Late Order Accountability" value={pct(accountabilityRate)} tone={accountabilityRate == null ? "gold" : accountabilityRate <= .1 ? "green" : "red"} detail={`${jsFaultOrders.length} warehouse accountable · ${outsideControlOrders.length} outside control`} />}
+              <MetricCard label="Late Order Accountability" value={pct(accountabilityRate)} tone={accountabilityRate == null ? "gold" : accountabilityRate <= .1 ? "green" : "red"} detail={`${jsFaultOrders.length} warehouse accountable · ${outsideControlOrders.length} outside control`} />
               <MetricCard label="YTD Shipped Orders" value={numberFormat.format(activeSection.kpis.ytdOrders)} tone="teal" detail="Year-to-date volume" />
               {view === "DTC" && <MetricCard label="YTD On-Time Rate" value={pct(activeSection.kpis.ytdOnTimeRate)} tone="teal" detail="Year-to-date service level" />}
             </section>
@@ -828,7 +869,7 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
               </article>
             </section>
 
-            {canEdit && <section className="panel accountability-panel">
+            <section className="panel accountability-panel">
               <div className="panel-title"><div><span>{view} ownership</span><h3>Late Order Accountability - 4 Weeks</h3></div><span className="accountability-rate">{pct(accountabilityRate)} Warehouse Accountability</span></div>
               {accountabilityOrders.length ? (
                 <div className="accountability-content">
@@ -849,7 +890,7 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
                   </div>
                 </div>
               ) : <div className="accountability-empty"><strong>Pending classification</strong><span>Add late reasons to calculate Warehouse Accountability.</span></div>}
-            </section>}
+            </section>
 
             <section className="panel late-preview-panel">
               <div className="panel-title"><div><span>Action queue</span><h3>{view} late orders</h3></div><button className="btn-text" onClick={() => setView("LATE")}>Open full review <ChevronRight size={15} /></button></div>
@@ -882,10 +923,25 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
                   </label>
                   <span className="selected-count">{selectedVisibleLateOrders.length} selected</span>
                   <select aria-label="Late reason for selected orders" value={selectedLateReason} onChange={(event) => { setSelectedLateReason(event.target.value); setSelectedUpdateError(""); }}>
-                    <option value="">Choose reason for selected…</option>
+                    <option value="">Late Reason · No change</option>
                     {LATE_REASON_OPTIONS.map((option) => <option key={option} value={option}>{option}</option>)}
                   </select>
-                  <button type="button" className="update-selected-button" disabled={!selectedVisibleLateOrders.length || !selectedLateReason || selectedUpdateSaving} onClick={() => { setSelectedUpdateError(""); setSelectedUpdateOpen(true); }}>
+                  <select aria-label="Actual status for selected orders" value={selectedActualStatus} onChange={(event) => {
+                    const value = event.target.value as "" | "system-late" | "confirmed-not-late";
+                    setSelectedActualStatus(value);
+                    if (value === "confirmed-not-late") setSelectedAccountability("");
+                    setSelectedUpdateError("");
+                  }}>
+                    <option value="">Actual Status · No change</option>
+                    <option value="system-late">System Late</option>
+                    <option value="confirmed-not-late">Confirmed Not Late</option>
+                  </select>
+                  <select aria-label="Accountability for selected orders" value={selectedAccountability} disabled={selectedActualStatus === "confirmed-not-late"} onChange={(event) => { setSelectedAccountability(event.target.value as "" | "warehouse-fault" | "not-warehouse-fault"); setSelectedUpdateError(""); }}>
+                    <option value="">Accountability · No change</option>
+                    <option value="warehouse-fault">Warehouse Fault</option>
+                    <option value="not-warehouse-fault">Not Warehouse Fault</option>
+                  </select>
+                  <button type="button" className="update-selected-button" disabled={!selectedVisibleLateOrders.length || !hasSelectedBulkChange || selectedUpdateSaving} onClick={() => { setSelectedUpdateError(""); setSelectedUpdateOpen(true); }}>
                     <Check size={15} /> Update Selected
                   </button>
                   {selectedUpdateSuccess && <span className="inline-success"><CheckCircle2 size={14} /> {selectedUpdateSuccess}</span>}
@@ -952,8 +1008,12 @@ export function DashboardApp({ user, signOutHref }: { user: { name: string; user
             <div className="modal-icon"><Check size={26} /></div>
             <span className="eyebrow">Confirm bulk update</span>
             <h2>Update {selectedVisibleLateOrders.length} orders?</h2>
-            <p>Only the selected, currently visible {lateSheet} orders will be updated. Their late reason will be set to <strong>{selectedLateReason}</strong>.</p>
+            <p>Only the selected, currently visible {lateSheet} orders will be updated. Fields marked “No change” will keep their current values.</p>
             <div className="confirm-selection-summary"><span>Selected orders</span><strong>{selectedVisibleLateOrders.length}</strong></div>
+            <div className="confirm-change-list" aria-label="Changes to apply">
+              {selectedBulkChanges.map((change) => <span key={change}><Check size={13} /> {change}</span>)}
+              {selectedActualStatus === "confirmed-not-late" && <small>Accountability will be Not Applicable for these orders.</small>}
+            </div>
             {selectedUpdateError && <div className="error-message"><AlertTriangle size={16} /> {selectedUpdateError}</div>}
             <div className="selected-update-actions">
               <button type="button" className="btn-secondary" disabled={selectedUpdateSaving} onClick={() => setSelectedUpdateOpen(false)}>Cancel</button>
